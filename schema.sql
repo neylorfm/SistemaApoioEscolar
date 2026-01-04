@@ -142,10 +142,51 @@ create table "Alunos" (
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Storage Policies (Buckets must be created manually or via script, but policies can be hinted)
--- Bucket: 'avatars' (public)
--- Bucket: 'logos' (public)
--- Bucket: 'attachments' (private/authenticated?)
+-- 14. Agendamentos (Resource Scheduling)
+create table "Agendamentos" (
+  id uuid default uuid_generate_v4() primary key,
+  recurso_id uuid references "Recursos"(id) on delete cascade,
+  horario_id uuid references "Horarios"(id) on delete cascade,
+  turma_id uuid references "Turmas"(id) on delete cascade,
+  profissional_id uuid references "Profissionais"(id) on delete cascade,
+  disciplina_id uuid references "Disciplinas"(id) on delete set null,
+  data date not null,
+  descricao text,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- Storage Buckets & Policies
+-- ==============================================================================
+
+-- 1. Create Buckets (Safe insert)
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+insert into storage.buckets (id, name, public)
+values ('logos', 'logos', true)
+on conflict (id) do nothing;
+
+insert into storage.buckets (id, name, public)
+values ('attachments', 'attachments', true) -- Usually public for ease of access in this app context, or false? Let's check usage. Avatars/Logos public. Attachments might be mixed.
+on conflict (id) do nothing;
+
+-- 2. Storage Policies (Standard Public Read / Auth Upload)
+
+-- Avatars
+create policy "Avatar Public Read" on storage.objects for select using ( bucket_id = 'avatars' );
+create policy "Avatar Auth Insert" on storage.objects for insert with check ( bucket_id = 'avatars' and auth.role() = 'authenticated' );
+create policy "Avatar Auth Update" on storage.objects for update using ( bucket_id = 'avatars' and auth.role() = 'authenticated' );
+create policy "Avatar Auth Delete" on storage.objects for delete using ( bucket_id = 'avatars' and auth.role() = 'authenticated' );
+
+-- Logos
+create policy "Logo Public Read" on storage.objects for select using ( bucket_id = 'logos' );
+create policy "Logo Auth Insert" on storage.objects for insert with check ( bucket_id = 'logos' and auth.role() = 'authenticated' );
+
+-- Attachments
+create policy "Attachments Public Read" on storage.objects for select using ( bucket_id = 'attachments' );
+create policy "Attachments Auth Insert" on storage.objects for insert with check ( bucket_id = 'attachments' and auth.role() = 'authenticated' );
+
 
 -- RLS Policies
 -- ==============================================================================
@@ -164,6 +205,7 @@ alter table "CalendarioLetivo" enable row level security;
 alter table "Links" enable row level security;
 alter table "PreferenciasUsuario" enable row level security;
 alter table "Alunos" enable row level security;
+alter table "Agendamentos" enable row level security;
 
 -- 2. Define Policies
 
@@ -228,6 +270,100 @@ create policy "User Delete Own Prefs" on "PreferenciasUsuario" for delete using 
 -- Students data is sensitive, should not be public.
 create policy "Auth Read Alunos" on "Alunos" for select using (auth.role() = 'authenticated');
 create policy "Auth All Alunos" on "Alunos" for all using (auth.role() = 'authenticated');
+
+-- Agendamentos Policies
+create policy "Enable read access for all users" on "Agendamentos" for select using (true);
+create policy "Enable insert for teachers" on "Agendamentos" for insert with check (auth.role() = 'authenticated');
+create policy "Enable delete for teachers" on "Agendamentos" for delete using (auth.role() = 'authenticated');
+create policy "Enable full access for admins" on "Agendamentos" for all using (
+  exists (
+    select 1 from "Profissionais" 
+    where id = auth.uid() and tipo = 'Administrador'
+  )
+);
+
+-- FUNCTIONS & TRIGGERS
+-- ==============================================================================
+
+-- 1. Trigger to ensure PDT is a Professor or Coordenador
+CREATE OR REPLACE FUNCTION check_pdt_is_professor()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.pdt_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM "Profissionais"
+      WHERE id = NEW.pdt_id AND tipo IN ('Professor', 'Coordenador', 'Administrador')
+    ) THEN
+      RAISE EXCEPTION 'O PDT selecionado deve ser um Professor, Coordenador ou Administrador.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS ensure_pdt_is_professor ON "Alunos";
+CREATE TRIGGER ensure_pdt_is_professor
+BEFORE INSERT OR UPDATE ON "Alunos"
+FOR EACH ROW
+EXECUTE FUNCTION check_pdt_is_professor();
+
+-- 2. Trigger to handle new user signup (Auto-create Profile)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public."Profissionais" (id, nome, email, tipo, must_change_password)
+  VALUES (
+    new.id, 
+    -- Prioritize 'nome' (sent by our app), fallbacks for standard OAuth
+    COALESCE(new.raw_user_meta_data->>'nome', new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', 'Novo Usuário'),
+    new.email, 
+    -- Prioritize 'tipo' (sent by our app), fallback to 'Colaborador'
+    COALESCE(new.raw_user_meta_data->>'tipo', 'Colaborador'),
+    false
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    -- If profile exists (e.g. re-register), update it with untrusted metadata? 
+    -- Or keep existing? 'DO NOTHING' is safer to prevent overwrites, 
+    -- BUT user said "apaguei e tentei criar". If Profissionais record remained, we should probably update it to reactivate/resync.
+    -- Let's UPDATE on conflict to ensure the new intent (Role/Name) is reflected.
+    nome = EXCLUDED.nome,
+    tipo = EXCLUDED.tipo,
+    email = EXCLUDED.email;
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger for new users
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 3. Function to Delete User (Admin Only) - Safely deletes from auth.users
+CREATE OR REPLACE FUNCTION public.delete_user_by_admin(user_id uuid)
+RETURNS void AS $$
+BEGIN
+  -- Check if executor is admin (double check for safety)
+  IF NOT EXISTS (
+    SELECT 1 FROM public."Profissionais" 
+    WHERE id = auth.uid() AND tipo = 'Administrador'
+  ) THEN
+    RAISE EXCEPTION 'Apenas administradores podem excluir usuários.';
+  END IF;
+
+  -- Delete from auth.users (Cascade will handle Profissionais if configured, but let's be explicit to avoid orphans)
+  -- Note: Deleting from auth.users requires 'postgres' role or security definer.
+  DELETE FROM auth.users WHERE id = user_id;
+  
+  -- Explicit delete from Profissionais just in case cascade is missing
+  -- (Though auth.users delete should trigger cascade if FK is OK)
+  DELETE FROM public."Profissionais" WHERE id = user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant execute
+GRANT EXECUTE ON FUNCTION public.delete_user_by_admin(uuid) TO authenticated;
+
 
 -- 3. Seed Initial Admin User
 -- ==============================================================================

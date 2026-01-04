@@ -35,7 +35,13 @@ export const UserSignupModal: React.FC<UserSignupModalProps> = ({ isOpen, onClos
 
         try {
             // Create a temporary client to avoid logging out the current admin
-            const tempClient = createClient(supabaseUrl, supabaseKey);
+            const tempClient = createClient(supabaseUrl, supabaseKey, {
+                auth: {
+                    persistSession: false, // Fix: Don't save this session to localStorage!
+                    autoRefreshToken: false,
+                    detectSessionInUrl: false
+                }
+            });
 
             // 1. Sign Up
             const { data: authData, error: authError } = await tempClient.auth.signUp({
@@ -52,33 +58,18 @@ export const UserSignupModal: React.FC<UserSignupModalProps> = ({ isOpen, onClos
             if (authError) throw authError;
 
             if (authData.user) {
-                // 2. Insert Profile (Use UPSERT to handle potential Triggers)
-                const { error: profileError } = await tempClient.from('Profissionais').upsert({
-                    id: authData.user.id,
-                    nome: name,
-                    email: email,
-                    tipo: role,
-                    alias: name.split(' ')[0]
-                });
+                // 2. Profile is auto-created by DB Trigger 'handle_new_user' using the metadata provided above.
+                // We don't need to manually insert/update anymore.
 
-                if (profileError) {
-                    console.error("Error creating profile:", profileError);
+                toast.success('Usuário criado com sucesso!');
+                onSuccess();
+                onClose();
 
-                    // Fallback: If insert failed (maybe RLS issue?), try main client (Admin) to insert
-                    // Note: We'd need to import main 'supabase' from lib here if we wanted to fallback.
-                    // But RLS "Enable insert for authenticated users" should cover this self-insert.
-                    toast.warning('Usuário criado, mas houve um erro ao criar o perfil. Verifique no painel.');
-                } else {
-                    toast.success('Usuário criado com sucesso!');
-                    onSuccess();
-                    onClose();
-
-                    // Reset form
-                    setName('');
-                    setEmail('');
-                    setPassword('');
-                    setRole('Professor');
-                }
+                // Reset form
+                setName('');
+                setEmail('');
+                setPassword('');
+                setRole('Professor');
 
                 // Logout the temp client just to be clean
                 await tempClient.auth.signOut();

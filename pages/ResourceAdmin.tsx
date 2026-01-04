@@ -296,11 +296,12 @@ export const ResourceAdmin: React.FC = () => {
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
 
-    const { error } = await supabase.from('Profissionais').delete().eq('id', userToDelete.id);
+    // Use RPC to delete from Auth.Users (which cascades to Profissionais)
+    const { error } = await supabase.rpc('delete_user_by_admin', { user_id: userToDelete.id });
 
     if (error) {
-      toast.error('Erro ao excluir usuário.');
       console.error(error);
+      toast.error('Erro ao excluir usuário: ' + error.message);
     } else {
       toast.success('Usuário removido com sucesso.');
       fetchUsers();
