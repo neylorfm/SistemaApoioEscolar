@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
-import { Printer, ChevronDown, UserSearch, MapPin, Search, Check, Clock, CalendarDays, Filter, X, Edit, Save, Plus, Trash2, BookOpen, AlertTriangle } from 'lucide-react';
+import { ChevronDown, UserSearch, MapPin, Search, Check, Clock, CalendarDays, Filter, X, Edit, Save, Plus, Trash2, BookOpen, AlertTriangle, FileText } from 'lucide-react';
 import { useResource } from '../contexts/ResourceContext';
 import { useAuth } from '../contexts/AuthContext';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export const TeacherSchedule: React.FC = () => {
   const { profile } = useAuth();
@@ -148,6 +150,74 @@ export const TeacherSchedule: React.FC = () => {
   const activeDays = days.filter(day =>
     visibleDays.includes(day) && getDailyAllocations(day).length > 0
   );
+
+  const handleDownloadPDF = () => {
+    if (!selectedTeacher) return;
+
+    const doc = new jsPDF();
+
+    // Header
+    doc.setFontSize(16);
+    doc.setTextColor(30, 41, 59);
+    doc.text(institutionName || 'Grade Horária', 14, 15);
+
+    doc.setFontSize(12);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Professor: ${selectedTeacher.alias || selectedTeacher.name} - ${selectedYear}`, 14, 22);
+
+    doc.setFontSize(10);
+    doc.text(`Semestre: ${selectedSemester}º`, 14, 28);
+
+    const tableHead = [['Horário', ...visibleDays.map(d => d.toUpperCase())]];
+
+    const tableBody = filteredTimeSlots.map(slot => {
+      const row = [`${slot.label.split('ª')[0]}ª Aula\n${slot.start} - ${slot.end}`];
+
+      visibleDays.forEach(day => {
+        const allocations = getDailyAllocations(day);
+        const item = allocations.find(a => a.timeSlotId === slot.id);
+
+        if (item) {
+          if (item.type === 'activity') {
+            row.push(`[ATIV. COMPL]\n${item.activity}`);
+          } else {
+            const className = item.schoolClass ? `${item.schoolClass.series} ${item.schoolClass.name}` : '';
+            const subjectName = item.subject?.name || '';
+            const room = item.room ? `(${item.room})` : '';
+            row.push([subjectName, className, room].filter(Boolean).join('\n'));
+          }
+        } else {
+          row.push('-');
+        }
+      });
+      return row;
+    });
+
+    autoTable(doc, {
+      head: tableHead,
+      body: tableBody,
+      startY: 35,
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+        valign: 'middle',
+        halign: 'center',
+        lineWidth: 0.1,
+        lineColor: [203, 213, 225]
+      },
+      headStyles: {
+        fillColor: [79, 70, 229],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold'
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 25, fillColor: [248, 250, 252] }
+      },
+      theme: 'grid'
+    });
+
+    doc.save(`Grade_${selectedTeacher.name.replace(/\s+/g, '_')}_${selectedYear}.pdf`);
+  };
 
   return (
     <div className="flex bg-background-light min-h-screen overflow-hidden font-sans">
@@ -377,10 +447,12 @@ export const TeacherSchedule: React.FC = () => {
               )}
 
               <button
-                className="p-2.5 text-slate-500 hover:text-primary-600 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg transition-all"
-                title="Imprimir Grade"
+                onClick={handleDownloadPDF}
+                className="p-2.5 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-all flex items-center gap-2"
+                title="Baixar Grade em PDF"
               >
-                <Printer className="w-5 h-5" />
+                <FileText className="w-5 h-5" />
+                <span className="hidden sm:inline text-sm font-bold">PDF</span>
               </button>
             </div>
           </div>
