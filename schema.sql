@@ -100,12 +100,13 @@ create table "HorarioComplementar" (
 );
 
 -- 10. CalendarioLetivo (Events)
+-- 10. CalendarioLetivo (Academic Calendar Year Config)
 create table "CalendarioLetivo" (
   id uuid default uuid_generate_v4() primary key,
-  title text not null,
-  date date not null,
-  type text not null,
-  description text,
+  ano integer not null unique,
+  inicio_ano date not null,
+  fim_ano date not null,
+  bimestres jsonb default '[]'::jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
@@ -351,18 +352,33 @@ BEGIN
     RAISE EXCEPTION 'Apenas administradores podem excluir usuários.';
   END IF;
 
-  -- Delete from auth.users (Cascade will handle Profissionais if configured, but let's be explicit to avoid orphans)
-  -- Note: Deleting from auth.users requires 'postgres' role or security definer.
-  DELETE FROM auth.users WHERE id = user_id;
-  
-  -- Explicit delete from Profissionais just in case cascade is missing
-  -- (Though auth.users delete should trigger cascade if FK is OK)
+  -- 1. Delete from Child Table first (Profissionais) to avoid FK violation
   DELETE FROM public."Profissionais" WHERE id = user_id;
+
+  -- 2. Delete from Parent Table (auth.users)
+  -- Note: This requires the function to be SECURITY DEFINER to access auth schema
+  DELETE FROM auth.users WHERE id = user_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Grant execute
 GRANT EXECUTE ON FUNCTION public.delete_user_by_admin(uuid) TO authenticated;
+
+-- 4. Seed Initial Data (Calendar)
+-- ==============================================================================
+INSERT INTO public."CalendarioLetivo" (ano, inicio_ano, fim_ano, bimestres)
+VALUES (
+  EXTRACT(YEAR FROM CURRENT_DATE)::int,
+  make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 2, 1),
+  make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 12, 15),
+  jsonb_build_array(
+    jsonb_build_object('nome', '1º Bimestre', 'inicio', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 2, 1), 'fim', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 4, 15)),
+    jsonb_build_object('nome', '2º Bimestre', 'inicio', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 4, 16), 'fim', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 7, 10)),
+    jsonb_build_object('nome', '3º Bimestre', 'inicio', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 8, 1), 'fim', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 9, 30)),
+    jsonb_build_object('nome', '4º Bimestre', 'inicio', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 10, 1), 'fim', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 12, 15))
+  )
+)
+ON CONFLICT (ano) DO NOTHING;
 
 
 -- 3. Seed Initial Admin User
@@ -466,17 +482,8 @@ END $$;
 
 -- 5. Seed Initial Calendar Events (Optional)
 -- ==============================================================================
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM "CalendarioLetivo" LIMIT 1) THEN
-    INSERT INTO "CalendarioLetivo" (title, date, type, description)
-    VALUES 
-      ('Início das Aulas', CURRENT_DATE + INTERVAL '7 days', 'academic', 'Início do ano letivo'),
-      ('Reunião de Pais', CURRENT_DATE + INTERVAL '14 days', 'event', 'Apresentação da escola'),
-      ('Feriado Nacional', CURRENT_DATE + INTERVAL '30 days', 'holiday', 'Feriado previsto');
-      
-    RAISE NOTICE 'Eventos do calendário criados com sucesso.';
-  END IF;
-END $$;
+-- 5. Seed Initial Calendar (Old logic removed - see section 4 above for correct seed)
+-- ==============================================================================
+-- (Previous conflicting seed removed)
 
 
