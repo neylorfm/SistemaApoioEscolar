@@ -687,97 +687,98 @@ export const ClassSchedule: React.FC = () => {
                 </select>
               </div>
 
-              {/* Semesters Group */}
-              <div className="flex bg-slate-100 p-1 rounded-lg shrink-0 h-[38px] items-center">
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      if (isEditMode) {
-                        if (selectedSemesters.includes('1')) {
-                          if (selectedSemesters.length > 1) setSelectedSemesters(selectedSemesters.filter(s => s !== '1'));
+              {/* Semesters Group with Status Below */}
+              <div className="flex flex-col items-center">
+                <div className="flex bg-slate-100 p-1 rounded-lg shrink-0 h-[38px] items-center">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        if (isEditMode) {
+                          if (selectedSemesters.includes('1')) {
+                            if (selectedSemesters.length > 1) setSelectedSemesters(selectedSemesters.filter(s => s !== '1'));
+                          } else {
+                            setSelectedSemesters([...selectedSemesters, '1']);
+                          }
                         } else {
-                          setSelectedSemesters([...selectedSemesters, '1']);
+                          setSelectedSemesters(['1']);
                         }
-                      } else {
-                        setSelectedSemesters(['1']);
-                      }
-                    }}
-                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all h-full flex items-center ${selectedSemesters.includes('1')
-                      ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
-                      : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                  >
-                    1º Sem
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (isEditMode) {
-                        if (selectedSemesters.includes('2')) {
-                          if (selectedSemesters.length > 1) setSelectedSemesters(selectedSemesters.filter(s => s !== '2'));
+                      }}
+                      className={`px-3 py-1 text-xs font-bold rounded-md transition-all h-full flex items-center ${selectedSemesters.includes('1')
+                        ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
+                        : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                      1º Sem
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (isEditMode) {
+                          if (selectedSemesters.includes('2')) {
+                            if (selectedSemesters.length > 1) setSelectedSemesters(selectedSemesters.filter(s => s !== '2'));
+                          } else {
+                            setSelectedSemesters([...selectedSemesters, '2']);
+                          }
                         } else {
-                          setSelectedSemesters([...selectedSemesters, '2']);
+                          setSelectedSemesters(['2']);
                         }
-                      } else {
-                        setSelectedSemesters(['2']);
-                      }
-                    }}
-                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all h-full flex items-center ${selectedSemesters.includes('2')
-                      ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
-                      : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                  >
-                    2º Sem
-                  </button>
+                      }}
+                      className={`px-3 py-1 text-xs font-bold rounded-md transition-all h-full flex items-center ${selectedSemesters.includes('2')
+                        ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
+                        : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                      2º Sem
+                    </button>
+                  </div>
+
+                  {/* Copy Button Area */}
+                  {isEditMode && (profile?.tipo === 'Administrador' || profile?.tipo === 'Coordenador') && (
+                    <button
+                      onClick={() => {
+                        const hasTargetData = allocations.some(a =>
+                          a.classId === selectedClassId &&
+                          a.year === selectedYear &&
+                          a.semester === '2'
+                        );
+
+                        if (hasTargetData) {
+                          setConfirmModalState({
+                            isOpen: true,
+                            title: "Sobrescrever Semestre",
+                            message: "O 2º semestre já possui horários cadastrados. Ao copiar, TODOS os horários existentes do 2º semestre serão substituídos pelos do 1º semestre.",
+                            type: 'warning',
+                            onConfirm: async () => {
+                              await copySemesterSchedule('1', '2', selectedYear, selectedClassId);
+                            }
+                          });
+                        } else {
+                          setConfirmModalState({
+                            isOpen: true,
+                            title: "Confirmar Cópia",
+                            message: "Confirma a cópia da grade do 1º semestre para o 2º semestre?",
+                            type: 'safe',
+                            onConfirm: async () => {
+                              await copySemesterSchedule('1', '2', selectedYear, selectedClassId);
+                            }
+                          });
+                        }
+                      }}
+                      className="p-1.5 ml-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all shrink-0 h-full flex items-center"
+                      title="Copiar horários do 1º para o 2º semestre."
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
-
-                {/* Copy Button Area */}
-                {isEditMode && (profile?.tipo === 'Administrador' || profile?.tipo === 'Coordenador') && (
-                  <button
-                    onClick={() => {
-                      const hasTargetData = allocations.some(a =>
-                        a.classId === selectedClassId &&
-                        a.year === selectedYear &&
-                        a.semester === '2'
-                      );
-
-                      if (hasTargetData) {
-                        setConfirmModalState({
-                          isOpen: true,
-                          title: "Sobrescrever Semestre",
-                          message: "O 2º semestre já possui horários cadastrados. Ao copiar, TODOS os horários existentes do 2º semestre serão substituídos pelos do 1º semestre.",
-                          type: 'warning',
-                          onConfirm: async () => {
-                            await copySemesterSchedule('1', '2', selectedYear, selectedClassId);
-                          }
-                        });
-                      } else {
-                        setConfirmModalState({
-                          isOpen: true,
-                          title: "Confirmar Cópia",
-                          message: "Confirma a cópia da grade do 1º semestre para o 2º semestre?",
-                          type: 'safe',
-                          onConfirm: async () => {
-                            await copySemesterSchedule('1', '2', selectedYear, selectedClassId);
-                          }
-                        });
-                      }
-                    }}
-                    className="p-1.5 ml-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all shrink-0 h-full flex items-center"
-                    title="Copiar horários do 1º para o 2º semestre."
-                  >
-                    <Copy className="w-4 h-4" />
-                  </button>
+                {/* Dynamic Helper Text - Now Below */}
+                {isEditMode && (
+                  <span className="text-[9px] font-bold text-red-500 uppercase tracking-tight mt-1 whitespace-nowrap">
+                    {selectedSemesters.length === 1 && selectedSemesters[0] === '1' && "Gravando 1º Sem"}
+                    {selectedSemesters.length === 1 && selectedSemesters[0] === '2' && "Gravando 2º Sem"}
+                    {selectedSemesters.length === 2 && "Gravando Ano Todo"}
+                  </span>
                 )}
               </div>
-
-              {/* Dynamic Helper Text */}
-              {isEditMode && (
-                <span className="text-[10px] font-bold text-red-500 uppercase tracking-tight ml-2 whitespace-nowrap hidden md:inline">
-                  {selectedSemesters.length === 1 && selectedSemesters[0] === '1' && "Gravando 1º Sem"}
-                  {selectedSemesters.length === 1 && selectedSemesters[0] === '2' && "Gravando 2º Sem"}
-                  {selectedSemesters.length === 2 && "Gravando Ano Todo"}
-                </span>
-              )}
 
               <div className="h-8 w-px bg-slate-200 hidden md:block shrink-0"></div>
 
@@ -813,13 +814,6 @@ export const ClassSchedule: React.FC = () => {
                   </>
                 )}
               </div>
-
-              <button
-                className="p-2.5 h-[38px] text-slate-500 hover:text-indigo-600 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg transition-all shrink-0"
-                title="Imprimir Grade"
-              >
-                <Printer className="w-5 h-5" />
-              </button>
 
               {/* Force Break for Admin Buttons on Mobile */}
               <div className="w-full md:hidden"></div>
