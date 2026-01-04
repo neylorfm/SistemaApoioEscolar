@@ -372,7 +372,7 @@ export const TeacherSchedule: React.FC = () => {
                     }`}
                 >
                   {isEditMode ? <Save className="w-4 h-4" /> : <Edit className="w-4 h-4" />}
-                  <span>{isEditMode ? 'Salvar' : 'Editar'}</span>
+                  <span>{isEditMode ? 'Salvar' : 'Complementar Grade'}</span>
                 </button>
               )}
 
