@@ -92,6 +92,7 @@ export interface Resource {
   icon?: any; // Using any to simplify passing Lucide components in this demo context
   iconBg: string;
   iconColor: string;
+  active?: boolean;
 }
 
 export interface TimeSlot {

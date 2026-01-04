@@ -20,6 +20,8 @@ import {
   Utensils,
   LayoutTemplate,
   Edit2,
+  Eye,
+  EyeOff,
   Mail,
   Shield,
   Image as ImageIcon,
@@ -63,8 +65,10 @@ interface ResourceItemProps {
   icon: React.ReactNode;
   iconBg: string;
   iconColor: string;
+  active?: boolean;
   onDelete: (id: string) => void;
   onEdit: (id: string) => void;
+  onToggleActive: (id: string, currentStatus: boolean) => void;
 }
 
 interface Profissional {
@@ -75,18 +79,28 @@ interface Profissional {
   tipo: 'Administrador' | 'Coordenador' | 'Professor' | 'Colaborador';
 }
 
-const ResourceItem: React.FC<ResourceItemProps> = ({ id, name, details, icon, iconBg, iconColor, onDelete, onEdit }) => (
-  <div className="bg-white rounded-lg border border-slate-200 p-4 flex items-center justify-between group hover:border-primary-300 transition-colors shadow-sm">
+const ResourceItem: React.FC<ResourceItemProps> = ({ id, name, details, icon, iconBg, iconColor, active = true, onDelete, onEdit, onToggleActive }) => (
+  <div className={`bg-white rounded-lg border p-4 flex items-center justify-between group transition-colors shadow-sm ${active ? 'border-slate-200 hover:border-primary-300' : 'border-slate-100 bg-slate-50 opacity-75'}`}>
     <div className="flex items-center gap-4">
-      <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${iconBg} ${iconColor}`}>
+      <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${active ? `${iconBg} ${iconColor}` : 'bg-slate-200 text-slate-400'}`}>
         {icon}
       </div>
       <div>
-        <h4 className="text-sm font-bold text-slate-800">{name}</h4>
+        <h4 className={`text-sm font-bold ${active ? 'text-slate-800' : 'text-slate-500'}`}>
+          {name}
+          {!active && <span className="ml-2 text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Desativado</span>}
+        </h4>
         <p className="text-xs text-slate-500 mt-0.5">{details}</p>
       </div>
     </div>
     <div className="flex items-center gap-2">
+      <button
+        onClick={() => onToggleActive(id, active)}
+        className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${active ? 'text-slate-400 hover:text-amber-500 hover:bg-amber-50' : 'text-slate-400 hover:text-emerald-500 hover:bg-emerald-50'}`}
+        title={active ? "Desativar" : "Ativar"}
+      >
+        {active ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+      </button>
       <button
         onClick={() => onEdit(id)}
         className="w-9 h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-all"
@@ -634,6 +648,11 @@ export const ResourceAdmin: React.FC = () => {
     }
   };
 
+  const handleToggleActive = (id: string, currentStatus: boolean) => {
+    updateResource(id, { active: !currentStatus });
+    toast.success(currentStatus ? 'Recurso desativado' : 'Recurso ativado');
+  };
+
   const visibleTimeSlots = hasNightShift
     ? timeSlots
     : timeSlots.filter(slot => !['l2', 't10', 't11', 'b3', 't12', 't13'].includes(slot.id));
@@ -764,8 +783,10 @@ export const ResourceAdmin: React.FC = () => {
                       icon={getIcon(res.type)}
                       iconBg={res.iconBg}
                       iconColor={res.iconColor}
+                      active={res.active}
                       onDelete={removeResource}
                       onEdit={handleEditResource}
+                      onToggleActive={handleToggleActive}
                     />
                   ))}
 

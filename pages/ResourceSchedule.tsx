@@ -52,6 +52,8 @@ export const ResourceSchedule: React.FC = () => {
     isLoading
   } = useResource();
 
+  const availableResources = resources.filter(r => r.active !== false);
+
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [bookings, setBookings] = useState<Agendamento[]>([]);
@@ -74,7 +76,8 @@ export const ResourceSchedule: React.FC = () => {
     descricao: ''
   });
 
-  const selectedResource = resources.find(r => r.id === selectedResourceId) || resources[0];
+  // Use availableResources instead of resources
+  const selectedResource = availableResources.find(r => r.id === selectedResourceId) || availableResources[0];
   const isPast = weekOffset < 0;
   // Read Only if week is past or user is not logged in
   const readOnly = isPast || !profile;
@@ -93,7 +96,7 @@ export const ResourceSchedule: React.FC = () => {
   }
 
   // 2. Empty State (No Resources)
-  if (resources.length === 0) {
+  if (availableResources.length === 0) {
     return (
       <div className="flex bg-slate-50 min-h-screen font-sans">
         <Sidebar />
@@ -398,7 +401,7 @@ export const ResourceSchedule: React.FC = () => {
                           Selecione um Recurso
                         </div>
                         <div className="space-y-1 max-h-[300px] overflow-y-auto custom-scrollbar">
-                          {resources.map(res => {
+                          {availableResources.map(res => {
                             const isSelected = res.id === selectedResourceId;
                             return (
                               <button
