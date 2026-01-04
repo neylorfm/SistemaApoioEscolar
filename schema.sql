@@ -100,20 +100,22 @@ create table "HorarioComplementar" (
 );
 
 -- 10. CalendarioLetivo (Events)
--- 10. CalendarioLetivo (Academic Calendar Year Config)
+-- 10. CalendarioLetivo (Events)
 create table "CalendarioLetivo" (
   id uuid default uuid_generate_v4() primary key,
-  ano integer not null unique,
-  inicio_ano date not null,
-  fim_ano date not null,
-  bimestres jsonb default '[]'::jsonb,
+  title text not null,
+  date date not null,
+  type text not null,
+  description text,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 
 -- 11. Links (Portal Links)
+-- 11. Links (Portal Links)
 create table "Links" (
   id uuid default uuid_generate_v4() primary key,
   title text not null,
+  description text,  -- Added to support UI description
   url text not null,
   icon text,
   category text,
@@ -364,21 +366,13 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Grant execute
 GRANT EXECUTE ON FUNCTION public.delete_user_by_admin(uuid) TO authenticated;
 
--- 4. Seed Initial Data (Calendar)
+-- 4. Seed Initial Calendar Events
 -- ==============================================================================
-INSERT INTO public."CalendarioLetivo" (ano, inicio_ano, fim_ano, bimestres)
-VALUES (
-  EXTRACT(YEAR FROM CURRENT_DATE)::int,
-  make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 2, 1),
-  make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 12, 15),
-  jsonb_build_array(
-    jsonb_build_object('nome', '1º Bimestre', 'inicio', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 2, 1), 'fim', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 4, 15)),
-    jsonb_build_object('nome', '2º Bimestre', 'inicio', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 4, 16), 'fim', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 7, 10)),
-    jsonb_build_object('nome', '3º Bimestre', 'inicio', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 8, 1), 'fim', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 9, 30)),
-    jsonb_build_object('nome', '4º Bimestre', 'inicio', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 10, 1), 'fim', make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int, 12, 15))
-  )
-)
-ON CONFLICT (ano) DO NOTHING;
+INSERT INTO public."CalendarioLetivo" (title, date, type, description)
+VALUES 
+  ('Início das Aulas', CURRENT_DATE + INTERVAL '7 days', 'academic', 'Início do ano letivo'),
+  ('Reunião de Pais', CURRENT_DATE + INTERVAL '14 days', 'event', 'Apresentação da escola'),
+  ('Feriado Nacional', CURRENT_DATE + INTERVAL '30 days', 'holiday', 'Feriado previsto');
 
 
 -- 3. Admin User Setup
@@ -390,8 +384,16 @@ ON CONFLICT (ano) DO NOTHING;
 -- 4. Para dar permissão de ADMIN, rode no SQL Editor:
 --    UPDATE "Profissionais" SET tipo = 'Administrador' WHERE email = 'seu@email.com';
 
--- 4. Seed Initial School Settings
+-- 6. Seed Initial Links (Portal Shortcuts)
 -- ==============================================================================
+INSERT INTO public."Links" (title, description, category, url)
+VALUES (
+  'Calendário Acadêmico', 
+  'Visualize o cronograma escolar anual, provas e feriados.',
+  'calendar',
+  '/academic-calendar'
+)
+ON CONFLICT DO NOTHING;
 DO $$
 DECLARE
   escola_id_var uuid;
@@ -404,13 +406,30 @@ BEGIN
       "hasNightShift",
       "lunchColor",
       "availableWeeks",
-      "semanticColors"
+      "semanticColors",
+      "academic_config"
     ) VALUES (
       'Sistema de Apoio Escolar',
       true,
       '#f97316',
       2,
-      '{"regular": "#2563eb", "maintenance": "#dc2626", "specialEvent": "#9333ea", "blockedProject": "#d97706"}'::jsonb
+      '{"regular": "#2563eb", "maintenance": "#dc2626", "specialEvent": "#9333ea", "blockedProject": "#d97706"}'::jsonb,
+      jsonb_build_object(
+        'yearConfig', jsonb_build_object(
+          'year', EXTRACT(YEAR FROM CURRENT_DATE)::text,
+          'startDate', (EXTRACT(YEAR FROM CURRENT_DATE) || '-02-01'),
+          'endDate', (EXTRACT(YEAR FROM CURRENT_DATE) || '-12-15'),
+          'nextYearStartDate', ((EXTRACT(YEAR FROM CURRENT_DATE) + 1) || '-02-01'),
+          'recoveryStartDate', (EXTRACT(YEAR FROM CURRENT_DATE) || '-12-16'),
+          'recoveryEndDate', (EXTRACT(YEAR FROM CURRENT_DATE) || '-12-23')
+        ),
+        'terms', jsonb_build_array(
+          jsonb_build_object('id', 1, 'label', '1º Bimestre', 'start', (EXTRACT(YEAR FROM CURRENT_DATE) || '-02-01'), 'end', (EXTRACT(YEAR FROM CURRENT_DATE) || '-04-15')),
+          jsonb_build_object('id', 2, 'label', '2º Bimestre', 'start', (EXTRACT(YEAR FROM CURRENT_DATE) || '-04-16'), 'end', (EXTRACT(YEAR FROM CURRENT_DATE) || '-07-10')),
+          jsonb_build_object('id', 3, 'label', '3º Bimestre', 'start', (EXTRACT(YEAR FROM CURRENT_DATE) || '-08-01'), 'end', (EXTRACT(YEAR FROM CURRENT_DATE) || '-09-30')),
+          jsonb_build_object('id', 4, 'label', '4º Bimestre', 'start', (EXTRACT(YEAR FROM CURRENT_DATE) || '-10-01'), 'end', (EXTRACT(YEAR FROM CURRENT_DATE) || '-12-15'))
+        )
+      )
     )
     RETURNING id INTO escola_id_var;
     

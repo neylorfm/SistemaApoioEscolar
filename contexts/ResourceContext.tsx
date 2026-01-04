@@ -1235,19 +1235,19 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // Academic Terms & Year Config
   const [academicTerms, setAcademicTerms] = useState<AcademicTerm[]>([
-    { id: 1, label: '1º Bimestre', start: `${new Date().getFullYear()}-02 - 10`, end: `${new Date().getFullYear()}-04 - 15`, color: 'bg-blue-50/50 border-blue-100' },
-    { id: 2, label: '2º Bimestre', start: `${new Date().getFullYear()}-04 - 16`, end: `${new Date().getFullYear()}-06 - 30`, color: 'bg-green-50/50 border-green-100' },
-    { id: 3, label: '3º Bimestre', start: `${new Date().getFullYear()} -08-01`, end: `${new Date().getFullYear()} -09 - 30`, color: 'bg-orange-50/50 border-orange-100' },
-    { id: 4, label: '4º Bimestre', start: `${new Date().getFullYear()} -10-01`, end: `${new Date().getFullYear()} -12 - 15`, color: 'bg-purple-50/50 border-purple-100' },
+    { id: 1, label: '1º Bimestre', start: `${new Date().getFullYear()}-02-10`, end: `${new Date().getFullYear()}-04-15`, color: 'bg-blue-50/50 border-blue-100' },
+    { id: 2, label: '2º Bimestre', start: `${new Date().getFullYear()}-04-16`, end: `${new Date().getFullYear()}-06-30`, color: 'bg-green-50/50 border-green-100' },
+    { id: 3, label: '3º Bimestre', start: `${new Date().getFullYear()}-08-01`, end: `${new Date().getFullYear()}-09-30`, color: 'bg-orange-50/50 border-orange-100' },
+    { id: 4, label: '4º Bimestre', start: `${new Date().getFullYear()}-10-01`, end: `${new Date().getFullYear()}-12-15`, color: 'bg-purple-50/50 border-purple-100' },
   ]);
 
   const [academicYear, setAcademicYear] = useState<AcademicYearConfig>({
     year: new Date().getFullYear().toString(),
     startDate: `${new Date().getFullYear()}-02-01`,
-    endDate: `${new Date().getFullYear()} -12 - 20`,
+    endDate: `${new Date().getFullYear()}-12-20`,
     nextYearStartDate: `${new Date().getFullYear() + 1}-02-01`,
-    recoveryStartDate: `${new Date().getFullYear()} -12 - 21`,
-    recoveryEndDate: `${new Date().getFullYear()} -12 - 30`,
+    recoveryStartDate: `${new Date().getFullYear()}-12-21`,
+    recoveryEndDate: `${new Date().getFullYear()}-12-30`,
   });
 
   // Computed events (System + Manual)
