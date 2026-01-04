@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
-import { Printer, Edit, ChevronDown, Users, X, Clock, MapPin, Coffee, Plus, Save, Trash2, Check, BookOpen, GraduationCap, User, Search, Filter, Copy, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { Edit, ChevronDown, Users, X, Clock, MapPin, Coffee, Plus, Save, Trash2, Check, BookOpen, GraduationCap, User, Search, Filter, Copy, AlertTriangle, Eye, EyeOff, FileText } from 'lucide-react';
 import { useResource } from '../contexts/ResourceContext';
 import { useAuth } from '../contexts/AuthContext';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface AllocationModalProps {
   isOpen: boolean;
@@ -569,6 +571,79 @@ export const ClassSchedule: React.FC = () => {
     }
   };
 
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF();
+
+    // Header
+    doc.setFontSize(16);
+    doc.setTextColor(30, 41, 59); // slate-800
+    doc.text(institutionName || 'Grade Horária', 14, 15);
+
+    doc.setFontSize(12);
+    doc.setTextColor(71, 85, 105); // slate-600
+    doc.text(`${selectedClass.series} ${selectedClass.name} - ${selectedYear}`, 14, 22);
+
+    // Semesters Info
+    const semText = selectedSemesters.map(s => `${s}º Sem`).join(' & ');
+    doc.setFontSize(10);
+    doc.text(`Semestre(s): ${semText}`, 14, 28);
+
+    // Prepare Table Data
+    const tableHead = [['Horário', ...visibleDays.map(d => d.toUpperCase())]];
+
+    const tableBody = timeSlots
+      .filter(ts => ts.type === 'class')
+      .map(slot => {
+        const row = [`${slot.label.split('ª')[0]}ª Aula\n${slot.start} - ${slot.end}`];
+
+        visibleDays.forEach(day => {
+          const allocation = getAllocation(day, slot.id);
+          if (allocation) {
+            const subject = subjects.find(s => s.id === allocation.subjectId);
+            const teacher = teachers.find(t => t.id === allocation.teacherId);
+            // Format: Subject \n Teacher \n Room
+            const parts = [
+              subject?.name || '',
+              teacher?.alias || teacher?.name || '',
+              allocation.room ? `(${allocation.room})` : ''
+            ].filter(Boolean).join('\n');
+            row.push(parts);
+          } else {
+            row.push('-');
+          }
+        });
+        return row;
+      });
+
+    autoTable(doc, {
+      head: tableHead,
+      body: tableBody,
+      startY: 35,
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+        valign: 'middle',
+        halign: 'center',
+        lineWidth: 0.1,
+        lineColor: [203, 213, 225] // slate-300
+      },
+      headStyles: {
+        fillColor: [79, 70, 229], // indigo-600
+        textColor: [255, 255, 255],
+        fontStyle: 'bold'
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 25, fillColor: [248, 250, 252] } // Time column bg-slate-50
+      },
+      theme: 'grid',
+      didParseCell: function (data: any) {
+        // Optional: Custom styling for cells if needed
+      }
+    });
+
+    doc.save(`Grade_${selectedClass.series.replace(/\s+/g, '_')}_${selectedClass.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
   const toggleDay = (day: string) => {
     if (visibleDays.includes(day)) {
       // Don't allow hiding all days
@@ -850,6 +925,16 @@ export const ClassSchedule: React.FC = () => {
                   </button>
                 </div>
               )}
+
+              {/* PDF Download Button */}
+              <button
+                onClick={handleDownloadPDF}
+                className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-bold text-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-all shrink-0 h-[38px] ml-auto md:ml-0"
+                title="Baixar PDF"
+              >
+                <FileText className="w-4 h-4" />
+                <span className="hidden xl:inline">PDF</span>
+              </button>
             </div>
           </div>
 
