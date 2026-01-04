@@ -303,6 +303,8 @@ export const NewStudent: React.FC = () => {
           }}
           showSearch={false}
           showNotifications={false}
+          hideUserSection={true}
+          hideLogout={true}
         >
           <button
             onClick={() => navigate(-1)}
