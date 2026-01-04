@@ -19,6 +19,7 @@ import {
   Coffee,
   Utensils,
   LayoutTemplate,
+  Edit2,
   Mail,
   Shield,
   Image as ImageIcon,
@@ -63,6 +64,7 @@ interface ResourceItemProps {
   iconBg: string;
   iconColor: string;
   onDelete: (id: string) => void;
+  onEdit: (id: string) => void;
 }
 
 interface Profissional {
@@ -73,7 +75,7 @@ interface Profissional {
   tipo: 'Administrador' | 'Coordenador' | 'Professor' | 'Colaborador';
 }
 
-const ResourceItem: React.FC<ResourceItemProps> = ({ id, name, details, icon, iconBg, iconColor, onDelete }) => (
+const ResourceItem: React.FC<ResourceItemProps> = ({ id, name, details, icon, iconBg, iconColor, onDelete, onEdit }) => (
   <div className="bg-white rounded-lg border border-slate-200 p-4 flex items-center justify-between group hover:border-primary-300 transition-colors shadow-sm">
     <div className="flex items-center gap-4">
       <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${iconBg} ${iconColor}`}>
@@ -84,13 +86,22 @@ const ResourceItem: React.FC<ResourceItemProps> = ({ id, name, details, icon, ic
         <p className="text-xs text-slate-500 mt-0.5">{details}</p>
       </div>
     </div>
-    <button
-      onClick={() => onDelete(id)}
-      className="w-9 h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
-      title="Excluir"
-    >
-      <Trash2 className="w-5 h-5" />
-    </button>
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => onEdit(id)}
+        className="w-9 h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-all"
+        title="Editar"
+      >
+        <Edit2 className="w-5 h-5" />
+      </button>
+      <button
+        onClick={() => onDelete(id)}
+        className="w-9 h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
+        title="Excluir"
+      >
+        <Trash2 className="w-5 h-5" />
+      </button>
+    </div>
   </div>
 );
 
@@ -400,6 +411,7 @@ export const ResourceAdmin: React.FC = () => {
     removeSubject,
     resourceTypes,
     addResourceType,
+    updateResource,
     logoUrl,
     handleUploadLogo,
     updateLinkOrder,
@@ -601,6 +613,27 @@ export const ResourceAdmin: React.FC = () => {
     }
   };
 
+  // Edit Resource State
+  const [editingResource, setEditingResource] = useState<{ id: string, name: string, details: string } | null>(null);
+  const [editDetails, setEditDetails] = useState('');
+
+  const handleEditResource = (id: string) => {
+    const resource = resources.find(r => r.id === id);
+    if (resource) {
+      setEditingResource({ id: resource.id, name: resource.name, details: resource.details });
+      setEditDetails(resource.details);
+    }
+  };
+
+  const saveResourceEdit = () => {
+    if (editingResource) {
+      updateResource(editingResource.id, { details: editDetails });
+      setEditingResource(null);
+      setEditDetails('');
+      toast.success('Recurso atualizado com sucesso!');
+    }
+  };
+
   const visibleTimeSlots = hasNightShift
     ? timeSlots
     : timeSlots.filter(slot => !['l2', 't10', 't11', 'b3', 't12', 't13'].includes(slot.id));
@@ -732,11 +765,50 @@ export const ResourceAdmin: React.FC = () => {
                       iconBg={res.iconBg}
                       iconColor={res.iconColor}
                       onDelete={removeResource}
+                      onEdit={handleEditResource}
                     />
                   ))}
 
                   {resources.length === 0 && (
                     <div className="text-center py-8 text-slate-400 text-sm">Nenhum recurso cadastrado.</div>
+                  )}
+
+                  {/* Edit Resource Modal */}
+                  {editingResource && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                      <div className="bg-white rounded-xl shadow-lg w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
+                        <h3 className="text-lg font-bold text-slate-800 mb-4">Editar Recurso: {editingResource.name}</h3>
+
+                        <div className="mb-4">
+                          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                            Detalhes / Especificações
+                          </label>
+                          <input
+                            type="text"
+                            value={editDetails}
+                            onChange={(e) => setEditDetails(e.target.value)}
+                            className="w-full rounded-lg border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 transition-all text-sm py-2.5 px-3 shadow-sm border"
+                            placeholder="Ex: Bloco C • Capacidade: 30 alunos"
+                            autoFocus
+                          />
+                        </div>
+
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setEditingResource(null)}
+                            className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={saveResourceEdit}
+                            className="px-4 py-2 text-sm font-bold text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm shadow-primary-500/20 transition-colors"
+                          >
+                            Salvar Alterações
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   )}
 
                 </div>

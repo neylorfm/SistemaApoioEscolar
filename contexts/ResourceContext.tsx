@@ -37,6 +37,7 @@ interface ResourceContextData {
   resources: Resource[];
   addResource: (resource: Resource) => void;
   removeResource: (id: string) => void;
+  updateResource: (id: string, updates: Partial<Resource>) => void;
 
   // Resource Types
   resourceTypes: ResourceType[];
@@ -763,6 +764,19 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
+  const updateResource = async (id: string, updates: Partial<Resource>) => {
+    const { error } = await supabase
+      .from('Recursos')
+      .update(updates)
+      .eq('id', id);
+
+    if (!error) {
+      setResources(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+    } else {
+      console.error('Error updating resource:', error);
+    }
+  };
+
   // Dados (Matriz) - Turmas
   const [classes, setClasses] = useState<SchoolClass[]>([]);
 
@@ -1474,6 +1488,7 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
       resources,
       addResource,
       removeResource,
+      updateResource,
       resourceTypes,
       addResourceType,
       timeSlots,
