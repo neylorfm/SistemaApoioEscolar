@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import { toast } from 'sonner';
 import {
   Resource,
   TimeSlot,
@@ -18,7 +19,6 @@ import {
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { useImageUpload } from '../hooks/useImageUpload';
-import { toast } from 'sonner';
 
 export interface SemanticColors {
   regular: string;
@@ -1013,8 +1013,10 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
         timeSlotId: data.horario_id,
         activity: data.atividade
       }]);
+      toast.success('Atividade adicionada com sucesso!');
     } else {
       console.error("Error adding complementary allocation:", error);
+      toast.error('Erro ao salvar atividade: ' + (error?.message || error?.details || 'Erro desconhecido'));
     }
   };
 
@@ -1026,8 +1028,10 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     if (!error) {
       setComplementaryAllocations(prev => prev.filter(c => c.id !== id));
+      toast.success('Atividade removida.');
     } else {
       console.error("Error removing complementary allocation:", error);
+      toast.error('Erro ao remover atividade: ' + (error?.message || error?.details || 'Erro desconhecido'));
     }
   };
 
@@ -1038,6 +1042,7 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
     const { data: sourceData, error: fetchError } = await supabase
       .from('HorarioTurmas')
       .select('*')
+
       .eq('ano_letivo', year)
       .eq('semestre', sourceSem)
       .eq('turma_id', classId);

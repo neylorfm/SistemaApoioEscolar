@@ -146,7 +146,7 @@ export const TeacherSchedule: React.FC = () => {
     }
   };
 
-  // Filter days that actually have classes AND are selected in the filter
+  // Filter days that actually have classes/activities AND are selected in the filter
   const activeDays = days.filter(day =>
     visibleDays.includes(day) && getDailyAllocations(day).length > 0
   );
@@ -474,7 +474,7 @@ export const TeacherSchedule: React.FC = () => {
                   {modalState.day} • {modalState.timeLabel}
                 </p>
 
-                <form onSubmit={(e) => {
+                <form onSubmit={async (e) => {
                   e.preventDefault();
                   const form = e.target as HTMLFormElement;
                   const activity = (form.elements.namedItem('activity') as HTMLInputElement).value;
@@ -482,9 +482,9 @@ export const TeacherSchedule: React.FC = () => {
                   if (activity) {
                     if (modalState.allocationId) {
                       // Remove old one first (simple update simulation)
-                      removeComplementaryAllocation(modalState.allocationId);
+                      await removeComplementaryAllocation(modalState.allocationId);
                     }
-                    addComplementaryAllocation({
+                    await addComplementaryAllocation({
                       teacherId: selectedTeacherId,
                       dayOfWeek: modalState.day,
                       timeSlotId: modalState.timeSlotId,

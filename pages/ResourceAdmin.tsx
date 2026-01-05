@@ -321,6 +321,14 @@ export const ResourceAdmin: React.FC = () => {
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
 
+    // Explicitly delete related records to prevent orphans (in case cascade fails)
+    await Promise.all([
+      supabase.from('HorarioComplementar').delete().eq('professor_id', userToDelete.id),
+      supabase.from('HorarioTurmas').delete().eq('professor_id', userToDelete.id),
+      supabase.from('Agendamentos').delete().eq('profissional_id', userToDelete.id),
+      supabase.from('Alunos').update({ pdt_id: null }).eq('pdt_id', userToDelete.id) // Set PDT to null
+    ]);
+
     // Use RPC to delete from Auth.Users (which cascades to Profissionais)
     const { error } = await supabase.rpc('delete_user_by_admin', { user_id: userToDelete.id });
 
@@ -1320,7 +1328,7 @@ export const ResourceAdmin: React.FC = () => {
                         </h3>
 
                         <div className="flex flex-col sm:flex-row gap-2 mb-4">
-                          <div className="relative w-full sm:w-[35%]">
+                          <div className="relative w-full sm:w-[30%]">
                             <button
                               onClick={() => setIsSeriesOpen(!isSeriesOpen)}
                               className={`w-full flex items-center justify-between rounded-lg border bg-white text-sm py-2 px-3 shadow-sm transition-all ${isSeriesOpen
@@ -1362,8 +1370,8 @@ export const ResourceAdmin: React.FC = () => {
                             type="text"
                             value={newClassName}
                             onChange={(e) => setNewClassName(e.target.value)}
-                            placeholder="ID/Curso (Ex: A, Enfermagem)"
-                            className="flex-1 rounded-lg border-slate-300 bg-white text-slate-800 focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 transition-all text-sm py-2 px-3 shadow-sm border"
+                            placeholder="Nome (Ex: A)"
+                            className="flex-1 rounded-lg border-slate-300 bg-white text-slate-800 focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 transition-all text-sm py-2 px-3 shadow-sm border min-w-[0]"
                           />
                           <button
                             onClick={handleAddClass}
@@ -1371,7 +1379,7 @@ export const ResourceAdmin: React.FC = () => {
                             title="Adicionar Turma"
                           >
                             <Plus className="w-4 h-4" />
-                            <span>Inserir Turma</span>
+                            <span className="hidden xl:inline">Inserir</span>
                           </button>
                         </div>
 

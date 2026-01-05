@@ -250,7 +250,8 @@ create policy "Auth All HorarioTurmas" on "HorarioTurmas" for all using (auth.ro
 
 -- HorarioComplementar
 create policy "Public Read HorarioComplementar" on "HorarioComplementar" for select using (true);
-create policy "Auth All HorarioComplementar" on "HorarioComplementar" for all using (auth.role() = 'authenticated');
+-- Updated via fix_rls.sql to include WITH CHECK
+create policy "Auth All HorarioComplementar" on "HorarioComplementar" for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 -- CalendarioLetivo
 create policy "Public Read CalendarioLetivo" on "CalendarioLetivo" for select using (true);

@@ -28,6 +28,7 @@ import { Sidebar } from '../components/Sidebar';
 import { useResource } from '../contexts/ResourceContext';
 import { FileAttachment } from '../types';
 import { supabase } from '../lib/supabase'; // Import Supabase
+import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react'; // Import Loader2
 import { Modal } from '../components/Modal';
 import { useImageUpload } from '../hooks/useImageUpload';
@@ -195,11 +196,45 @@ export const NewStudent: React.FC = () => {
     }));
   };
 
+  // Draft Management
+  const draftKey = isEditing && id ? `draft_student_${id}` : 'draft_student_new';
+
+  // Auto-save draft
+  React.useEffect(() => {
+    // Only save if there's data
+    if (formData.name || formData.enrollmentId || formData.diagnosis) {
+      localStorage.setItem(draftKey, JSON.stringify(formData));
+    }
+  }, [formData, draftKey]);
+
+  // Load draft for NEW student
+  React.useEffect(() => {
+    if (!isEditing) {
+      const savedDraft = localStorage.getItem(draftKey);
+      if (savedDraft) {
+        try {
+          const draft = JSON.parse(savedDraft);
+          setFormData(draft);
+          toast.info("Rascunho não salvo restaurado.");
+        } catch (e) {
+          console.error("Error restoring draft", e);
+        }
+      }
+    }
+  }, [isEditing, draftKey]);
+
+  // State to track if data has been loaded for the current ID
+  const loadedIdRef = React.useRef<string | null>(null);
+
   // Populate form if editing
   React.useEffect(() => {
     if (isEditing && id) {
+      // Only load if we haven't loaded this ID yet
+      if (loadedIdRef.current === id) return;
+
       const studentToEdit = students.find(s => s.id === id);
       if (studentToEdit) {
+        // Prepare DB data
         const pcd = studentToEdit.pcdProfile || {};
         const pcdAccess = pcd.quickAccess || {};
         const pcdMed = pcd.medication || {};
@@ -210,7 +245,7 @@ export const NewStudent: React.FC = () => {
         const pcdSens = pcd.sensory || {};
         const pcdAuto = pcd.autonomy || {};
 
-        setFormData({
+        const dbData = {
           name: studentToEdit.name,
           enrollmentId: studentToEdit.enrollmentId,
           classId: studentToEdit.classId || '',
@@ -250,14 +285,49 @@ export const NewStudent: React.FC = () => {
           materials: pcdAuto.materials || '',
 
           attachments: studentToEdit.attachments || []
-        });
+        };
+
+        // Check for Draft override
+        const savedDraft = localStorage.getItem(draftKey);
+        if (savedDraft) {
+          try {
+            const draft = JSON.parse(savedDraft);
+            // Verify if draft belongs to this user/entity logic effectively covered by key
+            setFormData(draft);
+            toast.info("Rascunho anterior restaurado.");
+          } catch (e) {
+            console.error("Error restoring draft for editing", e);
+            setFormData(dbData); // Fallback to DB data if draft is corrupted
+          }
+        } else {
+          setFormData(dbData); // No draft, use DB data
+        }
+
+        // Mark this ID as loaded to prevent overwrites on subsequent background refreshes
+        loadedIdRef.current = id;
       }
+    } else {
+      // If not editing (or ID cleared), reset the ref
+      loadedIdRef.current = null;
     }
-  }, [id, students, classes]);
+  }, [id, students, classes, isEditing, draftKey]);
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
+
+  // Prevent accidental page close/refresh
+  React.useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Only warn if there's significant data entered
+      if (formData.name || formData.enrollmentId || formData.diagnosis) {
+        e.preventDefault();
+        e.returnValue = ''; // Required for browser confirmation dialog
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [formData]);
 
   const handleSave = async () => {
     if (!formData.name || !formData.enrollmentId || !formData.classId) {
@@ -268,6 +338,7 @@ export const NewStudent: React.FC = () => {
     if (isEditing && id) {
       const { success, error } = await updateStudent(id, formData);
       if (success) {
+        localStorage.removeItem(draftKey); // Clear draft on success
         showModal('success', 'Sucesso', 'Aluno atualizado com sucesso!', () => {
           // Explicitly navigate on confirm
           navigate('/');
@@ -278,6 +349,7 @@ export const NewStudent: React.FC = () => {
     } else {
       const { success, error } = await addStudent(formData);
       if (success) {
+        localStorage.removeItem(draftKey); // Clear draft on success
         showModal('success', 'Sucesso', 'Aluno criado com sucesso!', () => {
           // Explicitly navigate on confirm
           navigate('/');
