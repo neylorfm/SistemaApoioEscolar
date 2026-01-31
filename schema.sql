@@ -44,6 +44,9 @@ create table "Recursos" (
   type text not null,
   "iconBg" text,
   "iconColor" text,
+  "allowed_roles" text[] DEFAULT ARRAY['Administrador', 'Coordenador', 'Professor', 'Colaborador'],
+  "daily_limit" integer DEFAULT 0,
+  "weekly_limit" integer DEFAULT 0,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 

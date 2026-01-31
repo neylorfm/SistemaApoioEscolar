@@ -17,7 +17,10 @@ import {
   User,
   Calendar as CalendarIcon,
   Clock,
-  FileText
+  FileText,
+  AlertCircle,
+  ShieldAlert,
+  Info
 } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { useResource } from '../contexts/ResourceContext';
@@ -74,6 +77,19 @@ export const ResourceSchedule: React.FC = () => {
     disciplinaId: '',
     profissionalId: '',
     descricao: ''
+  });
+
+  // Alert Modal State
+  const [alertModal, setAlertModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'error' | 'warning' | 'info';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info'
   });
 
   // Use availableResources instead of resources
@@ -246,9 +262,23 @@ export const ResourceSchedule: React.FC = () => {
       });
       setIsModalOpen(true);
     } else {
-      // Open New Booking
-      // Only allow click if we have write permission (Admins or Teachers)
-      if (!profile) return;
+      // Check Role Permissions
+      const userRole = profile.tipo || '';
+      // Admins and Coordinators are always allowed (bypass)
+      if (userRole !== 'Administrador' && userRole !== 'Coordenador') {
+        // If resource has specific allowed roles defined
+        if (selectedResource?.allowed_roles && selectedResource.allowed_roles.length > 0) {
+          if (!selectedResource.allowed_roles.includes(userRole)) {
+            setAlertModal({
+              isOpen: true,
+              title: 'Acesso Restrito',
+              message: `Desculpe, agendamentos para este recurso estão limitados aos perfis autorizados. Seu perfil atual (${userRole}) não possuí permissão. Procure a coordenação para solicitar a reserva.`,
+              type: 'error'
+            });
+            return;
+          }
+        }
+      }
 
       setSelectedSlot({
         date,
@@ -309,9 +339,15 @@ export const ResourceSchedule: React.FC = () => {
         setIsModalOpen(false);
         fetchBookings();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error('Erro ao salvar agendamento');
+      // Display the actual error message from the database trigger in the new modal
+      setAlertModal({
+        isOpen: true,
+        title: 'Não foi possível agendar',
+        message: err.message || 'Ocorreu um erro inesperado ao salvar seu agendamento. Por favor, tente novamente.',
+        type: 'warning'
+      });
     }
   };
 
@@ -423,7 +459,12 @@ export const ResourceSchedule: React.FC = () => {
                                     <span className={`text-sm font-bold truncate ${isSelected ? 'text-primary-700' : 'text-slate-700'}`}>
                                       {res.name}
                                     </span>
-                                    {isSelected && <Check className="w-4 h-4 text-primary-600" />}
+                                    <div className="flex items-center gap-1.5">
+                                      {res.allowed_roles && !res.allowed_roles.includes(profile?.tipo || '') && (
+                                        <Lock className="w-3.5 h-3.5 text-amber-500" title="Acesso Restrito" />
+                                      )}
+                                      {isSelected && <Check className="w-4 h-4 text-primary-600" />}
+                                    </div>
                                   </div>
                                   <p className="text-xs text-slate-500 truncate opacity-80">
                                     {res.details}
@@ -774,6 +815,41 @@ export const ResourceSchedule: React.FC = () => {
                 )}
               </div>
 
+            </div>
+          </div>
+        )}
+        {/* Alert Modal */}
+        {alertModal.isOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+              <div className="p-8 flex flex-col items-center text-center">
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 ${alertModal.type === 'error' ? 'bg-red-50 text-red-500' :
+                  alertModal.type === 'warning' ? 'bg-amber-50 text-amber-500' :
+                    'bg-blue-50 text-blue-500'
+                  }`}>
+                  {alertModal.type === 'error' ? <ShieldAlert className="w-10 h-10" /> :
+                    alertModal.type === 'warning' ? <AlertCircle className="w-10 h-10" /> :
+                      <Info className="w-10 h-10" />}
+                </div>
+
+                <h3 className="text-xl font-bold text-slate-800 mb-2">
+                  {alertModal.title}
+                </h3>
+
+                <p className="text-slate-500 text-sm leading-relaxed mb-8">
+                  {alertModal.message}
+                </p>
+
+                <button
+                  onClick={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
+                  className={`w-full py-4 rounded-2xl font-bold text-sm transition-all shadow-lg active:scale-95 ${alertModal.type === 'error' ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-200' :
+                    alertModal.type === 'warning' ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-200' :
+                      'bg-primary-600 hover:bg-primary-700 text-white shadow-primary-200'
+                    }`}
+                >
+                  Entendido, OK
+                </button>
+              </div>
             </div>
           </div>
         )}

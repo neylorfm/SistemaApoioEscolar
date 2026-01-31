@@ -66,6 +66,7 @@ interface ResourceItemProps {
   iconBg: string;
   iconColor: string;
   active?: boolean;
+  allowed_roles?: string[];
   onDelete: (id: string) => void;
   onEdit: (id: string) => void;
   onToggleActive: (id: string, currentStatus: boolean) => void;
@@ -79,17 +80,25 @@ interface Profissional {
   tipo: 'Administrador' | 'Coordenador' | 'Professor' | 'Colaborador';
 }
 
-const ResourceItem: React.FC<ResourceItemProps> = ({ id, name, details, icon, iconBg, iconColor, active = true, onDelete, onEdit, onToggleActive }) => (
+const ResourceItem: React.FC<ResourceItemProps> = ({ id, name, details, icon, iconBg, iconColor, active = true, allowed_roles = [], onDelete, onEdit, onToggleActive }) => (
   <div className={`bg-white rounded-lg border p-4 flex items-center justify-between group transition-colors shadow-sm ${active ? 'border-slate-200 hover:border-primary-300' : 'border-slate-100 bg-slate-50 opacity-75'}`}>
     <div className="flex items-center gap-4">
       <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${active ? `${iconBg} ${iconColor}` : 'bg-slate-200 text-slate-400'}`}>
         {icon}
       </div>
       <div>
-        <h4 className={`text-sm font-bold ${active ? 'text-slate-800' : 'text-slate-500'}`}>
-          {name}
-          {!active && <span className="ml-2 text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Desativado</span>}
-        </h4>
+        <div className="flex items-center gap-2">
+          <h4 className={`text-sm font-bold ${active ? 'text-slate-800' : 'text-slate-500'}`}>
+            {name}
+          </h4>
+          {!active && <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Desativado</span>}
+          {active && allowed_roles && !allowed_roles.includes('Professor') && !allowed_roles.includes('Colaborador') && (
+            <span className="text-[9px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tight flex items-center gap-1">
+              <Lock className="w-2.5 h-2.5" />
+              Coordenação
+            </span>
+          )}
+        </div>
         <p className="text-xs text-slate-500 mt-0.5">{details}</p>
       </div>
     </div>
@@ -469,6 +478,11 @@ export const ResourceAdmin: React.FC = () => {
   const [isCustomType, setIsCustomType] = useState(false);
   const [customTypeName, setCustomTypeName] = useState('');
 
+  // Limits & Access State
+  const [newDailyLimit, setNewDailyLimit] = useState(0);
+  const [newWeeklyLimit, setNewWeeklyLimit] = useState(0);
+  const [newAllowedRoles, setNewAllowedRoles] = useState<string[]>(['Administrador', 'Coordenador', 'Professor', 'Colaborador']);
+
   // States for Matrix inputs
   const [newClassSeries, setNewClassSeries] = useState('');
   const [newClassName, setNewClassName] = useState('');
@@ -604,12 +618,18 @@ export const ResourceAdmin: React.FC = () => {
       type: finalType,
       details: newResourceDetails || `Tipo: ${finalLabel}`,
       iconBg,
-      iconColor
+      iconColor,
+      allowed_roles: newAllowedRoles,
+      daily_limit: newDailyLimit,
+      weekly_limit: newWeeklyLimit
     });
 
     setNewResourceName('');
     setNewResourceType('');
     setNewResourceDetails('');
+    setNewDailyLimit(0);
+    setNewWeeklyLimit(0);
+    setNewAllowedRoles(['Administrador', 'Coordenador', 'Professor', 'Colaborador']);
   };
 
   const handleAddClass = () => {
@@ -636,20 +656,45 @@ export const ResourceAdmin: React.FC = () => {
   };
 
   // Edit Resource State
-  const [editingResource, setEditingResource] = useState<{ id: string, name: string, details: string } | null>(null);
+  const [editingResource, setEditingResource] = useState<{
+    id: string,
+    name: string,
+    details: string,
+    daily_limit?: number,
+    weekly_limit?: number,
+    allowed_roles?: string[]
+  } | null>(null);
   const [editDetails, setEditDetails] = useState('');
+  const [editDailyLimit, setEditDailyLimit] = useState(0);
+  const [editWeeklyLimit, setEditWeeklyLimit] = useState(0);
+  const [editAllowedRoles, setEditAllowedRoles] = useState<string[]>([]);
 
   const handleEditResource = (id: string) => {
     const resource = resources.find(r => r.id === id);
     if (resource) {
-      setEditingResource({ id: resource.id, name: resource.name, details: resource.details });
+      setEditingResource({
+        id: resource.id,
+        name: resource.name,
+        details: resource.details,
+        daily_limit: resource.daily_limit,
+        weekly_limit: resource.weekly_limit,
+        allowed_roles: resource.allowed_roles
+      });
       setEditDetails(resource.details);
+      setEditDailyLimit(resource.daily_limit || 0);
+      setEditWeeklyLimit(resource.weekly_limit || 0);
+      setEditAllowedRoles(resource.allowed_roles || ['Administrador', 'Coordenador', 'Professor', 'Colaborador']);
     }
   };
 
   const saveResourceEdit = () => {
     if (editingResource) {
-      updateResource(editingResource.id, { details: editDetails });
+      updateResource(editingResource.id, {
+        details: editDetails,
+        daily_limit: editDailyLimit,
+        weekly_limit: editWeeklyLimit,
+        allowed_roles: editAllowedRoles
+      });
       setEditingResource(null);
       setEditDetails('');
       toast.success('Recurso atualizado com sucesso!');
@@ -767,15 +812,86 @@ export const ResourceAdmin: React.FC = () => {
                         onChange={(e) => setNewResourceDetails(e.target.value)}
                       />
                     </div>
-                    <div className="md:col-span-3 flex items-end">
-                      <button
-                        onClick={handleAddResource}
-                        className="w-full bg-primary-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-lg shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 h-[42px]"
-                      >
-                        <Plus className="w-5 h-5" />
-                        Adicionar
-                      </button>
+                  </div>
+
+                  <div className="md:col-span-12 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-100 pt-4 mt-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Permissões de Agendamento</label>
+                      <div className="flex flex-wrap gap-2">
+                        {['Administrador', 'Coordenador', 'Professor', 'Colaborador'].map(role => {
+                          const isMandatory = ['Administrador', 'Coordenador'].includes(role);
+                          const isActive = newAllowedRoles.includes(role);
+
+                          return (
+                            <button
+                              key={role}
+                              onClick={() => {
+                                if (isMandatory) return;
+                                if (isActive) {
+                                  setNewAllowedRoles(newAllowedRoles.filter(r => r !== role));
+                                } else {
+                                  setNewAllowedRoles([...newAllowedRoles, role]);
+                                }
+                              }}
+                              className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isActive
+                                ? 'bg-primary-50 text-primary-700 border-primary-200'
+                                : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
+                                } ${isMandatory ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
+                              title={isMandatory ? "Obrigatório" : ""}
+                            >
+                              {role}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center gap-3 mt-3 ml-1">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full bg-primary-500"></div>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Ativo</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full bg-slate-300"></div>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Inativo</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 ml-1">
+                          (Adm/Coord são obrigatórios)
+                        </div>
+                      </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cota Diária</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={newDailyLimit}
+                          onChange={(e) => setNewDailyLimit(parseInt(e.target.value) || 0)}
+                          className="w-full rounded-lg border-slate-200 bg-slate-50 text-slate-800 text-sm py-2 px-3 border focus:ring-2 focus:ring-primary-500/20"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">0 = Ilimitado</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cota Semanal</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={newWeeklyLimit}
+                          onChange={(e) => setNewWeeklyLimit(parseInt(e.target.value) || 0)}
+                          className="w-full rounded-lg border-slate-200 bg-slate-50 text-slate-800 text-sm py-2 px-3 border focus:ring-2 focus:ring-primary-500/20"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">0 = Ilimitado</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-12 flex justify-end mt-2">
+                    <button
+                      onClick={handleAddResource}
+                      className="bg-primary-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 h-[42px]"
+                    >
+                      <Plus className="w-5 h-5" />
+                      Adicionar Recurso
+                    </button>
                   </div>
                 </div>
 
@@ -792,6 +908,7 @@ export const ResourceAdmin: React.FC = () => {
                       iconBg={res.iconBg}
                       iconColor={res.iconColor}
                       active={res.active}
+                      allowed_roles={res.allowed_roles}
                       onDelete={removeResource}
                       onEdit={handleEditResource}
                       onToggleActive={handleToggleActive}
@@ -820,6 +937,76 @@ export const ResourceAdmin: React.FC = () => {
                             placeholder="Ex: Bloco C • Capacidade: 30 alunos"
                             autoFocus
                           />
+                        </div>
+
+                        <div className="mb-4 space-y-4 border-t border-slate-100 pt-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Quem pode agendar?</label>
+                            <div className="flex flex-wrap gap-2">
+                              {['Administrador', 'Coordenador', 'Professor', 'Colaborador'].map(role => {
+                                const isMandatory = ['Administrador', 'Coordenador'].includes(role);
+                                const isActive = editAllowedRoles.includes(role);
+
+                                return (
+                                  <button
+                                    key={role}
+                                    onClick={() => {
+                                      if (isMandatory) return;
+                                      if (isActive) {
+                                        setEditAllowedRoles(editAllowedRoles.filter(r => r !== role));
+                                      } else {
+                                        setEditAllowedRoles([...editAllowedRoles, role]);
+                                      }
+                                    }}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isActive
+                                      ? 'bg-primary-50 text-primary-700 border-primary-200'
+                                      : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
+                                      } ${isMandatory ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
+                                    title={isMandatory ? "Obrigatório" : ""}
+                                  >
+                                    {role}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="flex items-center gap-3 mt-3 ml-1">
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-2 h-2 rounded-full bg-primary-500"></div>
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Ativo</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-2 h-2 rounded-full bg-slate-300"></div>
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Inativo</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 ml-1">
+                                (Adm/Coord são obrigatórios)
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cota Diária</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={editDailyLimit}
+                                onChange={(e) => setEditDailyLimit(parseInt(e.target.value) || 0)}
+                                className="w-full rounded-lg border-slate-200 bg-slate-50 text-slate-800 text-sm py-2 px-3 border focus:ring-2 focus:ring-primary-500/20"
+                              />
+                              <p className="text-[10px] text-slate-400 mt-1">0 = Sem limite</p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cota Semanal</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={editWeeklyLimit}
+                                onChange={(e) => setEditWeeklyLimit(parseInt(e.target.value) || 0)}
+                                className="w-full rounded-lg border-slate-200 bg-slate-50 text-slate-800 text-sm py-2 px-3 border focus:ring-2 focus:ring-primary-500/20"
+                              />
+                              <p className="text-[10px] text-slate-400 mt-1">0 = Sem limite</p>
+                            </div>
+                          </div>
                         </div>
 
                         <div className="flex justify-end gap-2">

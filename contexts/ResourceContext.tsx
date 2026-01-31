@@ -739,7 +739,10 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
         details: resource.details,
         type: resource.type,
         iconBg: resource.iconBg,
-        iconColor: resource.iconColor
+        iconColor: resource.iconColor,
+        allowed_roles: resource.allowed_roles,
+        daily_limit: resource.daily_limit,
+        weekly_limit: resource.weekly_limit
       }])
       .select()
       .single();

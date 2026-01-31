@@ -93,6 +93,9 @@ export interface Resource {
   iconBg: string;
   iconColor: string;
   active?: boolean;
+  allowed_roles?: string[]; // Array of roles allowed to book
+  daily_limit?: number;     // 0 = unlimited
+  weekly_limit?: number;    // 0 = unlimited
 }
 
 export interface TimeSlot {
