@@ -64,7 +64,22 @@ O projeto precisa se conectar ao seu banco de dados Supabase. Você precisará d
     - `VITE_SUPABASE_ANON_KEY`
 4.  Clique em **Deploy**.
 
+## 4. Implantação no Cloudflare Pages
+
+1.  Acesse o painel do [Cloudflare](https://dash.cloudflare.com/) e vá em **Workers & Pages > Create > Pages > Connect to Git**.
+2.  Selecione seu repositório do GitHub.
+3.  Nas **Build settings**:
+    - **Framework preset:** `Vite` (se não estiver disponível, use `None`)
+    - **Build command:** `npm run build`
+    - **Build output directory:** `dist`
+4.  Em **Environment variables (advanced)**, adicione:
+    - `VITE_SUPABASE_URL`
+    - `VITE_SUPABASE_ANON_KEY`
+5.  Clique em **Save and Deploy**.
+
+> **Nota:** O projeto já inclui um arquivo `public/_redirects` necessário para que o roteamento do React funcione corretamente no Cloudflare Pages.
+
 ## Solução de Problemas
 - **Tabelas não encontradas:** Verifique se o script `schema.sql` foi executado corretamente no Supabase.
-- **Erro de conexão:** Verifique se as variáveis de ambiente estão corretas tanto localmente quanto na Vercel.
+- **Erro de conexão:** Verifique se as variáveis de ambiente estão corretas tanto localmente quanto na Vercel ou Cloudflare.
 - **Login falhou:** O sistema usa a autenticação do Supabase. Verifique se a tabela `Profissionais` está populada com o ID do usuário correspondente ao login do Supabase para que o perfil seja carregado corretamente. O sistema espera que o `id` na tabela `Profissionais` corresponda ao `id` do usuário no `auth.users` do Supabase.
