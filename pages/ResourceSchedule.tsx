@@ -48,7 +48,6 @@ export const ResourceSchedule: React.FC = () => {
     timeSlots,
     hasNightShift,
     lunchColor,
-    availableWeeks,
     classes,
     subjects,
     semanticColors,
@@ -60,6 +59,8 @@ export const ResourceSchedule: React.FC = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [bookings, setBookings] = useState<Agendamento[]>([]);
+  const [preReservas, setPreReservas] = useState<any[]>([]); // Use PreReserva[] type properly if imported
+  const [slotRanking, setSlotRanking] = useState<any[]>([]);
   const [allProfessionals, setAllProfessionals] = useState<Professional[]>([]);
 
   // Modal State
@@ -80,6 +81,8 @@ export const ResourceSchedule: React.FC = () => {
     isFixed: false
   });
 
+  const [modalMode, setModalMode] = useState<'booking' | 'pre-booking'>('booking');
+
   // Alert Modal State
   const [alertModal, setAlertModal] = useState<{
     isOpen: boolean;
@@ -96,40 +99,20 @@ export const ResourceSchedule: React.FC = () => {
   // Use availableResources instead of resources
   const selectedResource = availableResources.find(r => r.id === selectedResourceId) || availableResources[0];
   const isPast = weekOffset < 0;
+  const isFuture = weekOffset > 0;
+  const isPreBookingWeek = weekOffset >= 2; // Weeks 2, 3, 4 are pure pre-booking
+  const isTransitionWeek = weekOffset === 1; // Week 1 (Next Week) - Special logic
+
+  // Logic permissions
+  // Week -3 to -1: Read only (History)
+  // Week 0: Current Week - Open for Booking (First come)
+  // Week 1: Next Week - Open for Booking (remainder) ONLY after Friday Noon of Week 0?
+  // Week 2, 3, 4: Future - Only Pre-Booking (Interest) on Tue/Wed/Thu
+
   // Read Only if week is past or user is not logged in
   const readOnly = isPast || !profile;
 
-  // 1. Loading State
-  if (isLoading) {
-    return (
-      <div className="flex bg-slate-50 min-h-screen font-sans items-center justify-center">
-        <Sidebar />
-        <div className="flex-1 flex flex-col items-center justify-center">
-          <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="text-slate-500 font-medium">Carregando recursos...</p>
-        </div>
-      </div>
-    );
-  }
 
-  // 2. Empty State (No Resources)
-  if (availableResources.length === 0) {
-    return (
-      <div className="flex bg-slate-50 min-h-screen font-sans">
-        <Sidebar />
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-          <div className="w-16 h-16 bg-slate-200 rounded-full flex items-center justify-center mb-4 text-slate-400">
-            <Monitor className="w-8 h-8" />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-700 mb-2">Nenhum Recurso Encontrado</h2>
-          <p className="text-slate-500 max-w-md">
-            Parece que nenhum recurso (Laboratórios, Projetores, Salas) foi cadastrado ainda.
-            Acesse as configurações para adicionar novos recursos.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   // Permissions
   const isAdmin = profile?.tipo === 'Administrador' || profile?.tipo === 'Coordenador' || profile?.tipo === 'Colaborador';
@@ -210,10 +193,36 @@ export const ResourceSchedule: React.FC = () => {
     }
   };
 
+  // Fetch PreReservas
+  const fetchPreReservas = async () => {
+    if (!selectedResourceId) return;
+
+    const startDate = currentWeek.start.toISOString().split('T')[0];
+    const endDate = currentWeek.end.toISOString().split('T')[0];
+
+    const { data, error } = await supabase
+      .from('PreReservas')
+      .select(`
+        *,
+        profissional:Profissionais(nome, alias)
+      `)
+      .eq('recurso_id', selectedResourceId)
+      .eq('status', 'pending')
+      .gte('data', startDate)
+      .lte('data', endDate);
+
+    if (error) {
+      console.error('Error fetching pre-reservas:', error);
+    } else {
+      setPreReservas(data || []);
+    }
+  };
+
   useEffect(() => {
     fetchBookings();
+    fetchPreReservas();
 
-    // Realtime Subscription for Agendamentos
+    // Realtime Subscription for Agendamentos & PreReservas
     const channel = supabase.channel(`schedule_updates_${selectedResourceId}`)
       .on(
         'postgres_changes',
@@ -223,10 +232,21 @@ export const ResourceSchedule: React.FC = () => {
           table: 'Agendamentos',
           filter: `recurso_id=eq.${selectedResourceId}`
         },
-        (payload) => {
-          console.log('[Realtime] Schedule changed:', payload);
+        () => {
           fetchBookings();
-          toast.info('Agenda atualizada em tempo real');
+          // toast.info('Agenda atualizada');
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'PreReservas',
+          filter: `recurso_id=eq.${selectedResourceId}`
+        },
+        () => {
+          fetchPreReservas();
         }
       )
       .subscribe();
@@ -236,108 +256,240 @@ export const ResourceSchedule: React.FC = () => {
     };
   }, [selectedResourceId, weekOffset]);
 
+  // --- Early Returns (Moved after hooks to prevent crash) ---
+
+  // 1. Loading State
+  if (isLoading) {
+    return (
+      <div className="flex bg-slate-50 min-h-screen font-sans items-center justify-center">
+        <Sidebar />
+        <div className="flex-1 flex flex-col items-center justify-center">
+          <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-slate-500 font-medium">Carregando recursos...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Empty State (No Resources)
+  if (availableResources.length === 0) {
+    return (
+      <div className="flex bg-slate-50 min-h-screen font-sans">
+        <Sidebar />
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+          <div className="w-16 h-16 bg-slate-200 rounded-full flex items-center justify-center mb-4 text-slate-400">
+            <Monitor className="w-8 h-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-700 mb-2">Nenhum Recurso Encontrado</h2>
+          <p className="text-slate-500 max-w-md">
+            Parece que nenhum recurso (Laboratórios, Projetores, Salas) foi cadastrado ainda.
+            Acesse as configurações para adicionar novos recursos.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // --- Handlers ---
 
   const handleCellClick = (date: Date, slot: any) => {
-    // Prevent booking in past if needed (optional rule)
-    // if (isPast) return; 
-
-    // Find existing
     const dateStr = date.toISOString().split('T')[0];
-    const existing = bookings.find(b => b.horario_id === slot.id && b.data === dateStr);
 
-    if (existing) {
-      // Open Details
+    // Check for existing confirmed booking
+    const existingBooking = bookings.find(b => b.horario_id === slot.id && b.data === dateStr);
+
+    if (existingBooking) {
+      // ... same as before (Show details)
       setSelectedSlot({
         date,
         timeSlotId: slot.id,
         timeLabel: slot.label,
         timeStart: slot.start,
-        existingBooking: existing
+        existingBooking: existingBooking
       });
       setFormData({
-        turmaId: existing.turma_id,
-        disciplinaId: existing.disciplina_id,
-        profissionalId: existing.profissional_id,
-        descricao: existing.descricao || ''
+        turmaId: existingBooking.turma_id,
+        disciplinaId: existingBooking.disciplina_id,
+        profissionalId: existingBooking.profissional_id,
+        descricao: existingBooking.descricao || '',
+        isFixed: existingBooking.is_fixed || false
       });
+      setModalMode('booking');
       setIsModalOpen(true);
-    } else {
-      // Check Role Permissions
-      const userRole = profile.tipo || '';
-      // Admins and Coordinators are always allowed (bypass)
-      if (userRole !== 'Administrador' && userRole !== 'Coordenador') {
-        // If resource has specific allowed roles defined
-        if (selectedResource?.allowed_roles && selectedResource.allowed_roles.length > 0) {
-          if (!selectedResource.allowed_roles.includes(userRole)) {
-            setAlertModal({
-              isOpen: true,
-              title: 'Acesso Restrito',
-              message: `Desculpe, agendamentos para este recurso estão limitados aos perfis autorizados. Seu perfil atual (${userRole}) não possuí permissão. Procure a coordenação para solicitar a reserva.`,
-              type: 'error'
-            });
-            return;
-          }
-        }
+      return;
+    }
+
+    // Logic for New Entry
+    const dayOfWeek = date.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+
+    // Admins can do anything anywhere
+    if (isAdmin) {
+      openModal(date, slot);
+      return;
+    }
+
+    // Week 1 Logic (Next Week)
+    if (isTransitionWeek) {
+      const today = new Date();
+      // Simple: Get Monday of the real current week to find this week's Friday
+      const realToday = new Date();
+      const currentDay = realToday.getDay();
+      const diffToMonday = realToday.getDate() - currentDay + (currentDay === 0 ? -6 : 1);
+      const realMonday = new Date(realToday);
+      realMonday.setDate(diffToMonday);
+
+      const realFriday = new Date(realMonday);
+      realFriday.setDate(realMonday.getDate() + 4);
+      realFriday.setHours(0, 0, 0, 0); // Open at 00:00 AM Friday
+
+      if (today < realFriday) {
+        toast.info("Agendamentos para a próxima semana só abrem na Sexta-feira da semana atual.");
+        return;
+      }
+      // If passed Friday, allow normal booking
+      openModal(date, slot);
+      return;
+    }
+
+    // Future Weeks (2, 3, 4) Logic - Pre-Booking Only
+    if (isPreBookingWeek) {
+      const todayDay = new Date().getDay();
+      const isWindowOpen = todayDay >= 2 && todayDay <= 4; // 2=Tue, 3=Wed, 4=Thu
+
+      if (!isWindowOpen) {
+        toast.info("Janelas de Pré-Reserva abrem apenas Terça, Quarta e Quinta.");
+        return;
       }
 
-      setSelectedSlot({
-        date,
-        timeSlotId: slot.id,
-        timeLabel: slot.label,
-        timeStart: slot.start
-      });
-      setFormData({
-        turmaId: '',
-        disciplinaId: '',
-        profissionalId: isTeacher && profile?.id ? profile.id : '', // Auto-set for teacher
-        descricao: '',
-        isFixed: false
-      });
-      setIsModalOpen(true);
+      // It is Pre-Booking Mode
+      openModal(date, slot, true); // true = isPreBooking
+      return;
     }
+
+    // Week 0 Logic (Current) - Free for all (First come)
+    openModal(date, slot);
+  };
+
+  const openModal = (date: Date, slot: any, isPreBooking = false) => {
+    // Check Role Permissions
+    const userRole = profile?.tipo || '';
+    if (!isAdmin && !isPreBooking) {
+      if (selectedResource?.allowed_roles && selectedResource.allowed_roles.length > 0) {
+        if (!selectedResource.allowed_roles.includes(userRole)) {
+          setAlertModal({
+            isOpen: true,
+            title: 'Acesso Restrito',
+            message: `Desculpe, agendamentos para este recurso estão limitados aos perfis autorizados.`,
+            type: 'error'
+          });
+          return;
+        }
+      }
+    }
+
+    setSelectedSlot({
+      date,
+      timeSlotId: slot.id,
+      timeLabel: slot.label,
+      timeStart: slot.start
+    });
+    setFormData({
+      turmaId: '',
+      disciplinaId: '',
+      profissionalId: isTeacher && profile?.id ? profile.id : '',
+      descricao: '',
+      isFixed: false
+    });
+    setModalMode(isPreBooking ? 'pre-booking' : 'booking');
+    setIsModalOpen(true);
+    // Fetch ranking if pre-booking
+    if (isPreBooking || modalMode === 'pre-booking') {
+      fetchRanking(slot.id, date);
+    } else {
+      setSlotRanking([]);
+    }
+  };
+
+  const fetchRanking = async (slotId: string, date: Date) => {
+    if (!selectedResourceId) return;
+    const { data, error } = await supabase.rpc('get_slot_ranking', {
+      p_recurso_id: selectedResourceId,
+      p_data: date.toISOString().split('T')[0],
+      p_horario_id: slotId
+    });
+    if (error) console.error(error);
+    else setSlotRanking(data || []);
   };
 
   const handleSave = async () => {
     if (!selectedSlot || !selectedResourceId) return;
-    if (!formData.turmaId || !formData.disciplinaId) {
+
+    // Validate fields based on mode
+    if (modalMode === 'booking' && (!formData.turmaId || !formData.disciplinaId)) {
       toast.error('Preencha a turma e a disciplina');
       return;
     }
-    if (isAdmin && !formData.profissionalId) {
-      toast.error('Selecione o profissional');
-      return;
-    }
 
-    const dateStr = selectedSlot.date.toISOString().split('T')[0];
+    // For Pre-Booking, maybe we don't need Turma/Disciplina? 
+    // "A Pré-Reserva não garante o recursos, e permite que possa cadastrar o interesse em qualquer aula"
+    // Usually interest implies "I want to teach X to Y class". So let's keep it required unless stated otherwise.
+    // User said "cadastrar o interesse em qualquer aula".
+    // Let's assume fields are required for now for better data.
+
     const profId = isAdmin ? formData.profissionalId : (profile?.id || '');
-
     if (!profId) {
       toast.error("Erro de identificação do usuário");
       return;
     }
 
-    const basePayload = {
-      recurso_id: selectedResourceId,
-      horario_id: selectedSlot.timeSlotId,
-      turma_id: formData.turmaId,
-      disciplina_id: formData.disciplinaId,
-      profissional_id: profId,
-      descricao: formData.descricao,
-      is_fixed: isAdmin ? formData.isFixed : false
-    };
+    if (isAdmin && !profId) {
+      toast.error('Selecione o profissional');
+      return;
+    }
+
+    const dateStr = selectedSlot.date.toISOString().split('T')[0];
 
     try {
-      let errors = [];
+      if (modalMode === 'pre-booking') {
+        // Insert into PreReservas
+        const { error } = await supabase.from('PreReservas').insert([{
+          recurso_id: selectedResourceId,
+          horario_id: selectedSlot.timeSlotId,
+          turma_id: formData.turmaId,
+          disciplina_id: formData.disciplinaId,
+          profissional_id: profId,
+          data: dateStr,
+          status: 'pending'
+        }]);
+
+        if (error) throw error;
+        toast.success('Interesse registrado com sucesso!');
+        setIsModalOpen(false);
+        fetchPreReservas();
+        return;
+      }
+
+      // Standard Booking Logic
+      // Check limits first (though DB trigger does it too, nice to check UI side or just rely on DB)
+      // Rely on DB trigger for limits.
+
+      const basePayload = {
+        recurso_id: selectedResourceId,
+        horario_id: selectedSlot.timeSlotId,
+        turma_id: formData.turmaId,
+        disciplina_id: formData.disciplinaId,
+        profissional_id: profId,
+        descricao: formData.descricao,
+        is_fixed: isAdmin ? formData.isFixed : false
+      };
 
       if (isAdmin && formData.isFixed) {
-        // Replicate for all available weeks
-        // Calculate base date (Week 0) corresponding to the selected day
+        // ... (Fixed logic same as before)
         const baseDate = new Date(selectedSlot.date);
         baseDate.setDate(baseDate.getDate() - (weekOffset * 7));
-
         const payloads = [];
-        for (let i = 0; i < availableWeeks; i++) {
+        const TOTAL_WEEKS = 5; // Current + 4 Future
+        for (let i = 0; i < TOTAL_WEEKS; i++) {
           const d = new Date(baseDate);
           d.setDate(d.getDate() + (i * 7));
           payloads.push({
@@ -345,17 +497,9 @@ export const ResourceSchedule: React.FC = () => {
             data: d.toISOString().split('T')[0]
           });
         }
-
-        // We use upsert to ensure fixed schedules overwrite or just insert?
-        // User said: "o que for adcionado será fixo e nenhum professor pode alterar".
-        // Let's use INSERT and catch errors for conflicts, or allow overwrite if we are admin?
-        // Safest is to try insert all, and report if some failed.
-        // Actually, for "Fixo", we probably want to force it. But let's stick to insert for now to avoid accidental data loss of existing valid bookings.
         const { error } = await supabase.from('Agendamentos').insert(payloads);
         if (error) throw error;
-
       } else {
-        // Single booking
         const { error } = await supabase.from('Agendamentos').insert([{
           ...basePayload,
           data: dateStr
@@ -369,11 +513,10 @@ export const ResourceSchedule: React.FC = () => {
 
     } catch (err: any) {
       console.error(err);
-      // Display the actual error message from the database trigger in the new modal
       setAlertModal({
         isOpen: true,
         title: 'Não foi possível agendar',
-        message: err.message || 'Ocorreu um erro inesperado ao salvar seu agendamento. Por favor, tente novamente.',
+        message: err.message || 'Ocorreu um erro.',
         type: 'warning'
       });
     }
@@ -530,6 +673,7 @@ export const ResourceSchedule: React.FC = () => {
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2 flex items-center justify-between shrink-0 mb-4">
               <button
                 onClick={() => setWeekOffset(prev => prev - 1)}
+                disabled={weekOffset <= -3} // Max 3 weeks back
                 className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronLeft className="w-5 h-5" />
@@ -544,9 +688,35 @@ export const ResourceSchedule: React.FC = () => {
                   {isPast && <span className="ml-2 text-xs font-normal bg-slate-100 px-2 py-0.5 rounded-full text-slate-500">Histórico</span>}
                 </h2>
               </div>
+
+              {/* Admin Consolidation Button */}
+              {isAdmin && isTransitionWeek && (
+                <button
+                  onClick={async () => {
+                    if (!confirm('Deseja consolidar os vencedores do ranking para esta semana? Isso irá criar os agendamentos oficiais baseados na fila de interesse.')) return;
+
+                    const { error } = await supabase.rpc('consolidate_schedule', {
+                      p_recurso_id: selectedResourceId,
+                      p_start_date: currentWeek.start.toISOString().split('T')[0],
+                      p_end_date: currentWeek.end.toISOString().split('T')[0]
+                    });
+
+                    if (error) {
+                      toast.error('Erro ao consolidar: ' + error.message);
+                    } else {
+                      toast.success('Semana consolidada com sucesso!');
+                      fetchBookings();
+                      fetchPreReservas();
+                    }
+                  }}
+                  className="mr-4 px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold hover:bg-indigo-200 transition-colors flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" /> Consolidar Vencedores
+                </button>
+              )}
               <button
                 onClick={() => setWeekOffset(prev => prev + 1)}
-                disabled={weekOffset >= availableWeeks - 1}
+                disabled={weekOffset >= 4} // Max 4 weeks ahead
                 className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronRight className="w-5 h-5" />
@@ -838,6 +1008,49 @@ export const ResourceSchedule: React.FC = () => {
                       </div>
                     )}
                   </div>
+
+                )}
+
+                {/* Ranking Display for Pre-Booking */}
+                {modalMode === 'pre-booking' && (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-indigo-600 uppercase flex items-center gap-2">
+                        <History className="w-3 h-3" /> Fila de Interesse (Ranking)
+                      </h4>
+                      <span className="text-[10px] text-slate-400">Atualizado em tempo real</span>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-xl border border-slate-100 p-2 max-h-[150px] overflow-y-auto custom-scrollbar">
+                      {slotRanking.length === 0 ? (
+                        <div className="text-center py-4 text-slate-400 text-xs italic">
+                          Seja o primeiro a registrar interesse!
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          {slotRanking.map((rankItem) => (
+                            <div key={rankItem.profissional_id} className={`flex items-center justify-between p-2 rounded-lg text-xs ${rankItem.profissional_id === profile?.id ? 'bg-indigo-50 border border-indigo-100' : 'bg-white border border-slate-100'}`}>
+                              <div className="flex items-center gap-2">
+                                <span className={`w-5 h-5 flex items-center justify-center rounded-full font-bold ${rankItem.rank === 1 ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>
+                                  {rankItem.rank}º
+                                </span>
+                                <span className={`font-medium ${rankItem.profissional_id === profile?.id ? 'text-indigo-700' : 'text-slate-600'}`}>
+                                  {rankItem.alias || rankItem.nome}
+                                  {rankItem.profissional_id === profile?.id && " (Você)"}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400" title="Score de Uso (Menor é melhor)">
+                                Score: {rankItem.score}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-tight">
+                      * O critério de desempate é menor uso nas últimas 4 semanas, seguido por quem registrou interesse primeiro.
+                    </p>
+                  </div>
                 )}
 
               </div>
@@ -873,9 +1086,12 @@ export const ResourceSchedule: React.FC = () => {
                     </button>
                     <button
                       onClick={handleSave}
-                      className="flex-1 px-6 py-2 rounded-xl bg-primary-600 text-white font-bold text-sm hover:bg-primary-700 transition-colors shadow-lg shadow-primary-200"
+                      className={`flex-1 px-6 py-2 rounded-xl text-white font-bold text-sm transition-colors shadow-lg ${modalMode === 'pre-booking'
+                        ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
+                        : 'bg-primary-600 hover:bg-primary-700 shadow-primary-200'
+                        }`}
                     >
-                      Confirmar Agendamento
+                      {modalMode === 'pre-booking' ? 'Registrar Interesse' : 'Confirmar Agendamento'}
                     </button>
                   </>
                 )}
@@ -920,6 +1136,6 @@ export const ResourceSchedule: React.FC = () => {
           </div>
         )}
       </div>
-    </div>
+    </div >
   );
 };

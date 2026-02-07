@@ -54,7 +54,7 @@ interface ResourceContextData {
   semanticColors: SemanticColors;
   setSemanticColors: (colors: SemanticColors) => void;
   availableWeeks: number;
-  setAvailableWeeks: (weeks: number) => void;
+  availableWeeks: number;
 
   // Matriz Data
   classes: SchoolClass[];
@@ -129,7 +129,7 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [institutionName, setInstitutionNameState] = useState('O NOME DA ESCOLA AQUI');
   const [hasNightShift, setHasNightShiftState] = useState(true);
   const [lunchColor, setLunchColorState] = useState<string>('#f97316'); // Default Orange Hex
-  const [availableWeeks, setAvailableWeeksState] = useState<number>(2);
+  const [availableWeeks, setAvailableWeeksState] = useState<number>(5);
   const [logoUrl, setLogoUrlState] = useState<string | null>(null);
   const [schoolSettingsId, setSchoolSettingsId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -199,6 +199,55 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
       if (error) console.error("Error saving student order:", error);
     }
   };
+
+  // --- STATE DECLARATIONS (MOVED TO TOP) ---
+  const [resourceTypes, setResourceTypes] = useState<ResourceType[]>([
+    { label: 'Laboratório', value: 'lab' },
+    { label: 'Projetor/Equipamento', value: 'projector' },
+    { label: 'Sala de Vídeo/Aula', value: 'room' },
+    { label: 'Auditório', value: 'auditorium' },
+    { label: 'Carrinho Móvel', value: 'tablet' }
+  ]);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [subjects, setSubjects] = useState<SchoolSubject[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [allocations, setAllocations] = useState<TeacherAllocation[]>([]);
+  const [complementaryAllocations, setComplementaryAllocations] = useState<ComplementaryAllocation[]>([]);
+  const [selectedResourceId, setSelectedResourceId] = useState<string>('');
+  const [rawTimeSlots, setRawTimeSlots] = useState<TimeSlot[]>([]);
+  const [manualEvents, setManualEvents] = useState<CalendarEvent[]>([]);
+  const [portalLinks, setPortalLinks] = useState<PortalLink[]>([]);
+
+  const [academicTerms, setAcademicTerms] = useState<AcademicTerm[]>([
+    { id: 1, label: '1º Bimestre', start: `${new Date().getFullYear()}-02-10`, end: `${new Date().getFullYear()}-04-15`, color: 'bg-blue-50/50 border-blue-100' },
+    { id: 2, label: '2º Bimestre', start: `${new Date().getFullYear()}-04-16`, end: `${new Date().getFullYear()}-06-30`, color: 'bg-green-50/50 border-green-100' },
+    { id: 3, label: '3º Bimestre', start: `${new Date().getFullYear()}-08-01`, end: `${new Date().getFullYear()}-09-30`, color: 'bg-orange-50/50 border-orange-100' },
+    { id: 4, label: '4º Bimestre', start: `${new Date().getFullYear()}-10-01`, end: `${new Date().getFullYear()}-12-15`, color: 'bg-purple-50/50 border-purple-100' },
+  ]);
+
+  const [academicYear, setAcademicYear] = useState<AcademicYearConfig>({
+    year: new Date().getFullYear().toString(),
+    startDate: `${new Date().getFullYear()}-02-01`,
+    endDate: `${new Date().getFullYear()}-12-20`,
+    nextYearStartDate: `${new Date().getFullYear() + 1}-02-01`,
+    recoveryStartDate: `${new Date().getFullYear()}-12-21`,
+    recoveryEndDate: `${new Date().getFullYear()}-12-30`,
+  });
+
+  const [semanticColors, setSemanticColorsState] = useState<SemanticColors>({
+    regular: '#2563eb',       // blue-600
+    blockedProject: '#d97706', // amber-600
+    specialEvent: '#9333ea',   // purple-600
+    maintenance: '#dc2626'     // red-600
+  });
+
+  const [sessionTimeouts, setSessionTimeouts] = useState<Record<string, number>>({
+    Administrador: 20,
+    Coordenador: 45,
+    Professor: 60,
+    Colaborador: 15
+  });
 
   // Students Data
   const [students, setStudents] = useState<Student[]>([]);
@@ -464,12 +513,7 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Cores semânticas padrão
-  const [semanticColors, setSemanticColorsState] = useState<SemanticColors>({
-    regular: '#2563eb',       // blue-600
-    blockedProject: '#d97706', // amber-600
-    specialEvent: '#9333ea',   // purple-600
-    maintenance: '#dc2626'     // red-600
-  });
+
 
   // Helper to fetch public config from new table or JSON as fallback
   const fetchPublicConfig = async () => {
@@ -641,18 +685,10 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
     updateSchoolSetting('lunchColor', color);
   };
 
-  const setAvailableWeeks = (weeks: number) => {
-    setAvailableWeeksState(weeks);
-    updateSchoolSetting('availableWeeks', weeks);
-  };
+
 
   // Session Timeouts
-  const [sessionTimeouts, setSessionTimeouts] = useState<Record<string, number>>({
-    Administrador: 20,
-    Coordenador: 45,
-    Professor: 60,
-    Colaborador: 15
-  });
+
 
   const updateSessionTimeouts = async (timeouts: Record<string, number>) => {
     setSessionTimeouts(timeouts);
@@ -686,13 +722,7 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Resource Types Logic
-  const [resourceTypes, setResourceTypes] = useState<ResourceType[]>([
-    { label: 'Laboratório', value: 'lab' },
-    { label: 'Projetor/Equipamento', value: 'projector' },
-    { label: 'Sala de Vídeo/Aula', value: 'room' },
-    { label: 'Auditório', value: 'auditorium' },
-    { label: 'Carrinho Móvel', value: 'tablet' }
-  ]);
+
 
   const addResourceType = (label: string) => {
     // Create a simple slug from label
@@ -707,7 +737,7 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
     return value;
   };
 
-  const [resources, setResources] = useState<Resource[]>([]);
+
 
   // Fetch Resources from Supabase
   // Fetch Resources from Supabase
@@ -781,10 +811,10 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Dados (Matriz) - Turmas
-  const [classes, setClasses] = useState<SchoolClass[]>([]);
+
 
   // Dados (Matriz) - Disciplinas
-  const [subjects, setSubjects] = useState<SchoolSubject[]>([]);
+
 
   // Fetch Classes and Subjects
   const fetchMatrixData = async () => {
@@ -867,7 +897,7 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   // Teachers
   // Teachers
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
+
 
   // Fetch Teachers
   const fetchTeachers = async () => {
@@ -890,8 +920,7 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Allocations (Lotações)
-  const [allocations, setAllocations] = useState<TeacherAllocation[]>([]);
-  const [complementaryAllocations, setComplementaryAllocations] = useState<ComplementaryAllocation[]>([]);
+
 
   // Fetch Allocations
   const refreshAllocations = async () => {
@@ -1105,10 +1134,10 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
-  const [selectedResourceId, setSelectedResourceId] = useState<string>('');
+
 
   // TimeSlots (Schedule/Horários)
-  const [rawTimeSlots, setRawTimeSlots] = useState<TimeSlot[]>([]);
+
 
   // Derived TimeSlots based on Night Shift setting
   const timeSlots = React.useMemo(() => {
@@ -1179,7 +1208,7 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
 
 
   // Calendar Events Logic
-  const [manualEvents, setManualEvents] = useState<CalendarEvent[]>([]);
+
 
   // Computed events (System + Manual)
 
@@ -1256,21 +1285,9 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Academic Terms & Year Config
-  const [academicTerms, setAcademicTerms] = useState<AcademicTerm[]>([
-    { id: 1, label: '1º Bimestre', start: `${new Date().getFullYear()}-02-10`, end: `${new Date().getFullYear()}-04-15`, color: 'bg-blue-50/50 border-blue-100' },
-    { id: 2, label: '2º Bimestre', start: `${new Date().getFullYear()}-04-16`, end: `${new Date().getFullYear()}-06-30`, color: 'bg-green-50/50 border-green-100' },
-    { id: 3, label: '3º Bimestre', start: `${new Date().getFullYear()}-08-01`, end: `${new Date().getFullYear()}-09-30`, color: 'bg-orange-50/50 border-orange-100' },
-    { id: 4, label: '4º Bimestre', start: `${new Date().getFullYear()}-10-01`, end: `${new Date().getFullYear()}-12-15`, color: 'bg-purple-50/50 border-purple-100' },
-  ]);
 
-  const [academicYear, setAcademicYear] = useState<AcademicYearConfig>({
-    year: new Date().getFullYear().toString(),
-    startDate: `${new Date().getFullYear()}-02-01`,
-    endDate: `${new Date().getFullYear()}-12-20`,
-    nextYearStartDate: `${new Date().getFullYear() + 1}-02-01`,
-    recoveryStartDate: `${new Date().getFullYear()}-12-21`,
-    recoveryEndDate: `${new Date().getFullYear()}-12-30`,
-  });
+
+
 
   // Computed events (System + Manual)
   const calendarEvents = React.useMemo(() => {
@@ -1348,7 +1365,7 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // Portal Links Logic
-  const [portalLinks, setPortalLinks] = useState<PortalLink[]>([]);
+
 
   // Fetch Links
   // Fetch Links
@@ -1510,7 +1527,6 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
       semanticColors,
       setSemanticColors,
       availableWeeks,
-      setAvailableWeeks,
       classes,
       addClass,
       removeClass,

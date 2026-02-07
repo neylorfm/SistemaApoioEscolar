@@ -434,8 +434,7 @@ export const ResourceAdmin: React.FC = () => {
     setLunchColor,
     semanticColors,
     setSemanticColors,
-    availableWeeks,
-    setAvailableWeeks,
+
     classes,
     addClass,
     removeClass,
@@ -1446,29 +1445,7 @@ export const ResourceAdmin: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="bg-blue-50/50 rounded-lg p-4 border border-blue-100">
-                      <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-                        <CalendarRange className="w-4 h-4 text-primary-600" />
-                        Janela de Agendamento Disponível
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {[1, 2, 3, 4].map((weeks) => (
-                          <button
-                            key={weeks}
-                            onClick={() => setAvailableWeeks(weeks)}
-                            className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all border ${availableWeeks === weeks
-                              ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
-                              : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                              }`}
-                          >
-                            {weeks} {weeks === 1 ? 'Semana' : 'Semanas'}
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-xs text-slate-500 mt-2">
-                        Define quantas semanas futuras estarão visíveis e disponíveis para agendamento pelos usuários.
-                      </p>
-                    </div>
+
 
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-12 gap-y-2">
                       {visibleTimeSlots.map((slot) => (

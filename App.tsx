@@ -29,73 +29,77 @@ const LoadingFallback = () => (
   </div>
 );
 
+import { ErrorBoundary } from './components/ErrorBoundary';
+
 function App() {
   return (
-    <AuthProvider>
-      <LayoutProvider>
-        <ResourceProvider>
-          <AutoLogoutHandler />
-          <Toaster richColors position="top-center" />
-          <Router>
-            <Suspense fallback={<LoadingFallback />}>
-              <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/" element={
-                  <ProtectedRoute>
-                    <StudentList />
-                  </ProtectedRoute>
-                } />
-                <Route path="/student/:id" element={
-                  <ProtectedRoute>
-                    <StudentDetails />
-                  </ProtectedRoute>
-                } />
-                <Route path="/new-student" element={
-                  <ProtectedRoute>
-                    <NewStudent />
-                  </ProtectedRoute>
-                } />
-                <Route path="/student/edit/:id" element={
-                  <ProtectedRoute>
-                    <NewStudent />
-                  </ProtectedRoute>
-                } />
-                <Route path="/teacher-portal" element={
-                  <ProtectedRoute>
-                    <TeacherPortal />
-                  </ProtectedRoute>
-                } />
-                <Route path="/teacher-schedule" element={
-                  <ProtectedRoute>
-                    <TeacherSchedule />
-                  </ProtectedRoute>
-                } />
-                <Route path="/class-schedule" element={
-                  <ProtectedRoute>
-                    <ClassSchedule />
-                  </ProtectedRoute>
-                } />
-                <Route path="/resources" element={
-                  <ProtectedRoute>
-                    <ResourceAdmin />
-                  </ProtectedRoute>
-                } />
-                <Route path="/resource-schedule" element={
-                  <ProtectedRoute>
-                    <ResourceSchedule />
-                  </ProtectedRoute>
-                } />
-                <Route path="/academic-calendar" element={
-                  <ProtectedRoute>
-                    <AcademicCalendar />
-                  </ProtectedRoute>
-                } />
-              </Routes>
-            </Suspense>
-          </Router>
-        </ResourceProvider>
-      </LayoutProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <LayoutProvider>
+          <ResourceProvider>
+            <AutoLogoutHandler />
+            <Toaster richColors position="top-center" />
+            <Router>
+              <Suspense fallback={<LoadingFallback />}>
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/" element={
+                    <ProtectedRoute>
+                      <StudentList />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/student/:id" element={
+                    <ProtectedRoute>
+                      <StudentDetails />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/new-student" element={
+                    <ProtectedRoute>
+                      <NewStudent />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/student/edit/:id" element={
+                    <ProtectedRoute>
+                      <NewStudent />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/teacher-portal" element={
+                    <ProtectedRoute>
+                      <TeacherPortal />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/teacher-schedule" element={
+                    <ProtectedRoute>
+                      <TeacherSchedule />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/class-schedule" element={
+                    <ProtectedRoute>
+                      <ClassSchedule />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/resources" element={
+                    <ProtectedRoute>
+                      <ResourceAdmin />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/resource-schedule" element={
+                    <ProtectedRoute>
+                      <ResourceSchedule />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/academic-calendar" element={
+                    <ProtectedRoute>
+                      <AcademicCalendar />
+                    </ProtectedRoute>
+                  } />
+                </Routes>
+              </Suspense>
+            </Router>
+          </ResourceProvider>
+        </LayoutProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

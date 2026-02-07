@@ -228,3 +228,16 @@ export interface Agendamento {
   disciplina?: { name: string };
   profissional?: { nome: string; alias: string };
 }
+
+export interface PreReserva {
+  id: string;
+  recurso_id: string;
+  horario_id: string;
+  turma_id?: string;
+  disciplina_id?: string;
+  data: string;
+  profissional_id: string;
+  status: 'pending' | 'won' | 'lost' | 'cancelled';
+  created_at: string;
+  profissional?: { nome: string; alias: string };
+}
