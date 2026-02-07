@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
-import { Edit, ChevronDown, Users, X, Clock, MapPin, Coffee, Plus, Save, Trash2, Check, BookOpen, GraduationCap, User, Search, Filter, Copy, AlertTriangle, Eye, EyeOff, FileText } from 'lucide-react';
+import { Edit, ChevronDown, Users, X, Clock, MapPin, Coffee, Plus, Save, Trash2, Check, BookOpen, GraduationCap, User, Search, Filter, Copy, AlertTriangle, Eye, EyeOff, FileText, Upload } from 'lucide-react';
 import { useResource } from '../contexts/ResourceContext';
 import { useAuth } from '../contexts/AuthContext';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { ImportScheduleModal } from '../components/ImportScheduleModal';
 
 interface AllocationModalProps {
   isOpen: boolean;
@@ -344,7 +345,10 @@ export const ClassSchedule: React.FC = () => {
     freeTeachers: any[];
     busyTeachers: any[];
     complementaryTeachers: any[];
+
   } | null>(null);
+
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   // Confirmation Modal State
   const [confirmModalState, setConfirmModalState] = useState<{
@@ -896,6 +900,15 @@ export const ClassSchedule: React.FC = () => {
               {/* Admin Buttons */}
               {(profile?.tipo === 'Administrador' || profile?.tipo === 'Coordenador') && (
                 <div className="flex items-center gap-2 shrink-0 w-full md:w-auto">
+                  {isEditMode && (
+                    <button
+                      onClick={() => setImportModalOpen(true)}
+                      className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all whitespace-nowrap h-[38px] bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 shadow-sm"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span className="hidden sm:inline">Importar CSV</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setIsAvailabilityMode(!isAvailabilityMode);
@@ -1082,6 +1095,14 @@ export const ClassSchedule: React.FC = () => {
         freeTeachers={availabilityData?.freeTeachers || []}
         busyTeachers={availabilityData?.busyTeachers || []}
         complementaryTeachers={availabilityData?.complementaryTeachers || []}
+      />
+
+      <ImportScheduleModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onSuccess={() => {
+          // Maybe show success toast or just refresh (already refreshed in modal)
+        }}
       />
     </div >
   );

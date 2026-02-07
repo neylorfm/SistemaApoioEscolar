@@ -72,9 +72,11 @@ O projeto precisa se conectar ao seu banco de dados Supabase. Você precisará d
     - **Framework preset:** `Vite` (se não estiver disponível, use `None`)
     - **Build command:** `npm run build`
     - **Build output directory:** `dist`
+    - **IMPORTANTE:** Certifique-se de que os campos "Deploy command" e "Version command" estejam **VAZIOS**. Se eles estiverem preenchidos, o deploy irá falhar.
 4.  Em **Environment variables (advanced)**, adicione:
     - `VITE_SUPABASE_URL`
     - `VITE_SUPABASE_ANON_KEY`
+    - `NODE_VERSION` com valor `20` (Necessário para o Vite 6)
 5.  Clique em **Save and Deploy**.
 
 > **Nota:** O projeto já inclui um arquivo `public/_redirects` necessário para que o roteamento do React funcione corretamente no Cloudflare Pages.

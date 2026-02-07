@@ -4,6 +4,10 @@ ADD COLUMN IF NOT EXISTS "allowed_roles" text[] DEFAULT ARRAY['Administrador', '
 ADD COLUMN IF NOT EXISTS "daily_limit" integer DEFAULT 0,
 ADD COLUMN IF NOT EXISTS "weekly_limit" integer DEFAULT 0;
 
+-- Add is_fixed to Agendamentos
+ALTER TABLE "Agendamentos" 
+ADD COLUMN IF NOT EXISTS "is_fixed" boolean DEFAULT false;
+
 -- Function to enforce limits
 CREATE OR REPLACE FUNCTION check_resource_limits()
 RETURNS TRIGGER AS $$
@@ -23,8 +27,8 @@ BEGIN
      RAISE EXCEPTION 'Usuario nao encontrado.';
   END IF;
 
-  -- 2. Bypass Limit Checks for Admins/Coordinators
-  IF user_role IN ('Administrador', 'Coordenador') THEN
+  -- 2. Bypass Limit Checks for Admins/Coordinators OR Fixed Schedules
+  IF user_role IN ('Administrador', 'Coordenador') OR NEW.is_fixed = true THEN
      RETURN NEW;
   END IF;
 
@@ -44,7 +48,8 @@ BEGIN
       FROM "Agendamentos" 
       WHERE recurso_id = NEW.recurso_id 
       AND profissional_id = NEW.profissional_id 
-      AND data = NEW.data;
+      AND data = NEW.data
+      AND (is_fixed IS NULL OR is_fixed = false);
       
       IF daily_count >= res_daily_limit THEN
            RAISE EXCEPTION 'Limite diário de agendamentos excedido para este recurso (% por dia). Solicite ao coordenador.', res_daily_limit;
@@ -57,7 +62,8 @@ BEGIN
       FROM "Agendamentos" 
       WHERE recurso_id = NEW.recurso_id 
       AND profissional_id = NEW.profissional_id 
-      AND date_trunc('week', data) = date_trunc('week', NEW.data::date);
+      AND date_trunc('week', data) = date_trunc('week', NEW.data::date)
+      AND (is_fixed IS NULL OR is_fixed = false);
       
       IF weekly_count >= res_weekly_limit THEN
            RAISE EXCEPTION 'Limite semanal de agendamentos excedido para este recurso (% por semana). Solicite ao coordenador.', res_weekly_limit;
@@ -74,3 +80,7 @@ CREATE TRIGGER enforce_resource_limits
 BEFORE INSERT ON "Agendamentos"
 FOR EACH ROW
 EXECUTE FUNCTION check_resource_limits();
+
+-- Reset all daily limits to 0 as requested ("Retire a cota diaria")
+UPDATE "Recursos" SET daily_limit = 0;
+

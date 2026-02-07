@@ -222,6 +222,7 @@ export interface Agendamento {
   disciplina_id: string;
   data: string;
   descricao?: string;
+  is_fixed?: boolean;
   created_at: string;
   turma?: { series: string; name: string };
   disciplina?: { name: string };

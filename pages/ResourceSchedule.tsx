@@ -76,7 +76,8 @@ export const ResourceSchedule: React.FC = () => {
     turmaId: '',
     disciplinaId: '',
     profissionalId: '',
-    descricao: ''
+    descricao: '',
+    isFixed: false
   });
 
   // Alert Modal State
@@ -290,7 +291,8 @@ export const ResourceSchedule: React.FC = () => {
         turmaId: '',
         disciplinaId: '',
         profissionalId: isTeacher && profile?.id ? profile.id : '', // Auto-set for teacher
-        descricao: ''
+        descricao: '',
+        isFixed: false
       });
       setIsModalOpen(true);
     }
@@ -315,30 +317,56 @@ export const ResourceSchedule: React.FC = () => {
       return;
     }
 
-    const payload = {
+    const basePayload = {
       recurso_id: selectedResourceId,
       horario_id: selectedSlot.timeSlotId,
-      data: dateStr,
       turma_id: formData.turmaId,
       disciplina_id: formData.disciplinaId,
       profissional_id: profId,
-      descricao: formData.descricao
+      descricao: formData.descricao,
+      is_fixed: isAdmin ? formData.isFixed : false
     };
 
     try {
-      const { error } = await supabase.from('Agendamentos').insert([payload]);
+      let errors = [];
 
-      if (error) {
-        if (error.code === '23505') { // Unique violation
-          toast.error('Horário já reservado por outro usuário');
-        } else {
-          throw error;
+      if (isAdmin && formData.isFixed) {
+        // Replicate for all available weeks
+        // Calculate base date (Week 0) corresponding to the selected day
+        const baseDate = new Date(selectedSlot.date);
+        baseDate.setDate(baseDate.getDate() - (weekOffset * 7));
+
+        const payloads = [];
+        for (let i = 0; i < availableWeeks; i++) {
+          const d = new Date(baseDate);
+          d.setDate(d.getDate() + (i * 7));
+          payloads.push({
+            ...basePayload,
+            data: d.toISOString().split('T')[0]
+          });
         }
+
+        // We use upsert to ensure fixed schedules overwrite or just insert?
+        // User said: "o que for adcionado será fixo e nenhum professor pode alterar".
+        // Let's use INSERT and catch errors for conflicts, or allow overwrite if we are admin?
+        // Safest is to try insert all, and report if some failed.
+        // Actually, for "Fixo", we probably want to force it. But let's stick to insert for now to avoid accidental data loss of existing valid bookings.
+        const { error } = await supabase.from('Agendamentos').insert(payloads);
+        if (error) throw error;
+
       } else {
-        toast.success('Agendamento realizado!');
-        setIsModalOpen(false);
-        fetchBookings();
+        // Single booking
+        const { error } = await supabase.from('Agendamentos').insert([{
+          ...basePayload,
+          data: dateStr
+        }]);
+        if (error) throw error;
       }
+
+      toast.success('Agendamento realizado!');
+      setIsModalOpen(false);
+      fetchBookings();
+
     } catch (err: any) {
       console.error(err);
       // Display the actual error message from the database trigger in the new modal
@@ -354,18 +382,30 @@ export const ResourceSchedule: React.FC = () => {
   const handleDelete = async () => {
     if (!selectedSlot?.existingBooking) return;
 
-    if (!confirm('Tem certeza que deseja remover este agendamento?')) return;
+    const isFixed = selectedSlot.existingBooking.is_fixed;
 
-    const { error } = await supabase
-      .from('Agendamentos')
-      .delete()
-      .eq('id', selectedSlot.existingBooking.id);
+    let deleteQuery = supabase.from('Agendamentos').delete();
+
+    if (isFixed) {
+      if (!confirm('Este é um agendamento FIXO. Deseja remover TODAS as recorrências deste agendamento para este horário?')) return;
+
+      // Delete all fixed bookings for this slot/resource
+      deleteQuery = deleteQuery
+        .eq('recurso_id', selectedResourceId)
+        .eq('horario_id', selectedSlot.timeSlotId)
+        .eq('is_fixed', true);
+    } else {
+      if (!confirm('Tem certeza que deseja remover este agendamento?')) return;
+      deleteQuery = deleteQuery.eq('id', selectedSlot.existingBooking.id);
+    }
+
+    const { error } = await deleteQuery;
 
     if (error) {
       console.error(error);
       toast.error('Erro ao excluir agendamento');
     } else {
-      toast.success('Agendamento removido');
+      toast.success(isFixed ? 'Agendamentos fixos removidos' : 'Agendamento removido');
       setIsModalOpen(false);
       fetchBookings();
     }
@@ -584,26 +624,34 @@ export const ResourceSchedule: React.FC = () => {
                                 className={`w-full h-full border-l-4 rounded-r p-2 flex flex-col justify-center cursor-pointer transition-all shadow-sm
                                   ${canModify ? 'hover:opacity-90 hover:shadow-md' : 'opacity-80'}`}
                                 style={{
-                                  backgroundColor: isOwner ? `${semanticColors.regular}20` : '#f1f5f9',
-                                  borderColor: isOwner ? semanticColors.regular : '#94a3b8',
+                                  backgroundColor: booking.is_fixed
+                                    ? '#fffaf0' // Amber-50
+                                    : isOwner ? `${semanticColors.regular}20` : '#f1f5f9',
+                                  borderColor: booking.is_fixed
+                                    ? '#d97706' // Amber-600
+                                    : isOwner ? semanticColors.regular : '#94a3b8',
                                 }}
                               >
                                 <div className="flex items-center gap-1 mb-1">
-                                  {isOwner ? <User className="w-3 h-3 text-primary-600" /> : <Lock className="w-3 h-3 text-slate-400" />}
-                                  <span className="text-xs font-bold uppercase text-slate-700 truncate">
-                                    {booking.profissional?.alias || booking.profissional?.nome}
+                                  {booking.is_fixed ? (
+                                    <Lock className="w-3 h-3 text-amber-600" title="Horário Fixo (Semanas)" />
+                                  ) : (
+                                    isOwner ? <User className="w-3 h-3 text-primary-600" /> : <Lock className="w-3 h-3 text-slate-400" />
+                                  )}
+                                  <span className={`text-xs font-bold uppercase truncate ${booking.is_fixed ? 'text-amber-800' : 'text-slate-700'}`}>
+                                    {booking.is_fixed ? 'FIXO' : (booking.profissional?.alias || booking.profissional?.nome)}
                                   </span>
                                 </div>
-                                <p className="text-xs font-medium text-slate-600 leading-tight">
+                                <p className={`text-xs font-medium leading-tight ${booking.is_fixed ? 'text-amber-700' : 'text-slate-600'}`}>
                                   {booking.disciplina?.name}
                                 </p>
-                                <p className="text-[10px] text-slate-500 mt-1">
+                                <p className={`text-[10px] mt-1 ${booking.is_fixed ? 'text-amber-600/80' : 'text-slate-500'}`}>
                                   {booking.turma?.series} {booking.turma?.name}
                                 </p>
                                 {booking.descricao && (
                                   <div className="flex items-center gap-1 mt-0.5" title={booking.descricao}>
-                                    <FileText className="w-3 h-3 text-slate-400" />
-                                    <span className="text-[9px] text-slate-400 italic truncate max-w-[80px]">
+                                    <FileText className={`w-3 h-3 ${booking.is_fixed ? 'text-amber-400' : 'text-slate-400'}`} />
+                                    <span className={`text-[9px] italic truncate max-w-[80px] ${booking.is_fixed ? 'text-amber-500' : 'text-slate-400'}`}>
                                       Obs.
                                     </span>
                                   </div>
@@ -771,6 +819,24 @@ export const ResourceSchedule: React.FC = () => {
                         className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm min-h-[80px] resize-y"
                       />
                     </div>
+
+                    {isAdmin && (
+                      <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                        <input
+                          type="checkbox"
+                          id="isFixed"
+                          checked={formData.isFixed}
+                          onChange={e => setFormData({ ...formData, isFixed: e.target.checked })}
+                          className="w-5 h-5 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                        />
+                        <label htmlFor="isFixed" className="text-sm font-bold text-amber-800 cursor-pointer select-none">
+                          Agendamento Fixo (Semanal)
+                          <p className="text-xs text-amber-600 font-normal">
+                            Replica este agendamento para todas as semanas disponíveis.
+                          </p>
+                        </label>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -827,7 +893,7 @@ export const ResourceSchedule: React.FC = () => {
                   alertModal.type === 'warning' ? 'bg-amber-50 text-amber-500' :
                     'bg-blue-50 text-blue-500'
                   }`}>
-                  {alertModal.type === 'error' ? <ShieldAlert className="w-10 h-10" /> :
+                  {alertModal.type === 'error' ? <Lock className="w-10 h-10" /> :
                     alertModal.type === 'warning' ? <AlertCircle className="w-10 h-10" /> :
                       <Info className="w-10 h-10" />}
                 </div>

@@ -860,17 +860,6 @@ export const ResourceAdmin: React.FC = () => {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cota Diária</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={newDailyLimit}
-                          onChange={(e) => setNewDailyLimit(parseInt(e.target.value) || 0)}
-                          className="w-full rounded-lg border-slate-200 bg-slate-50 text-slate-800 text-sm py-2 px-3 border focus:ring-2 focus:ring-primary-500/20"
-                        />
-                        <p className="text-[10px] text-slate-400 mt-1">0 = Ilimitado</p>
-                      </div>
-                      <div>
                         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cota Semanal</label>
                         <input
                           type="number"
@@ -984,17 +973,6 @@ export const ResourceAdmin: React.FC = () => {
                             </div>
                           </div>
                           <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cota Diária</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={editDailyLimit}
-                                onChange={(e) => setEditDailyLimit(parseInt(e.target.value) || 0)}
-                                className="w-full rounded-lg border-slate-200 bg-slate-50 text-slate-800 text-sm py-2 px-3 border focus:ring-2 focus:ring-primary-500/20"
-                              />
-                              <p className="text-[10px] text-slate-400 mt-1">0 = Sem limite</p>
-                            </div>
                             <div>
                               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Cota Semanal</label>
                               <input
