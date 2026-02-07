@@ -18,6 +18,7 @@ import {
   Moon,
   Coffee,
   Utensils,
+  ArrowDownAZ,
   LayoutTemplate,
   Edit2,
   Eye,
@@ -248,6 +249,7 @@ export const ResourceAdmin: React.FC = () => {
   const { profile, loading } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('recursos');
+  const [isSubjectSorted, setIsSubjectSorted] = useState(false);
 
   React.useEffect(() => {
     if (!loading && profile?.tipo !== 'Administrador') {
@@ -1590,20 +1592,36 @@ export const ResourceAdmin: React.FC = () => {
                           </button>
                         </div>
 
+                        <div className="flex justify-end mb-2">
+                          <button
+                            onClick={() => setIsSubjectSorted(!isSubjectSorted)}
+                            className={`text-xs flex items-center gap-1 px-2 py-1 rounded transition-colors ${isSubjectSorted ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-slate-500 hover:bg-slate-100'}`}
+                          >
+                            <ArrowDownAZ className="w-3 h-3" />
+                            {isSubjectSorted ? 'Ordenado A-Z' : 'Ordenar A-Z'}
+                          </button>
+                        </div>
+
                         <div className="flex-1 overflow-y-auto max-h-[300px] pr-1 custom-scrollbar space-y-2">
                           {subjects.length === 0 ? (
                             <div className="text-center py-6 text-slate-400 text-sm border border-dashed border-slate-200 rounded-lg">
                               Nenhuma disciplina cadastrada.
                             </div>
                           ) : (
-                            subjects.map((subj) => (
-                              <MatrixItem
-                                key={subj.id}
-                                name={subj.name}
-                                icon={<BookOpen className="w-4 h-4" />}
-                                onDelete={() => removeSubject(subj.id)}
-                              />
-                            ))
+                            subjects
+                              .slice()
+                              .sort((a, b) => {
+                                if (!isSubjectSorted) return 0;
+                                return a.name.localeCompare(b.name);
+                              })
+                              .map((subj) => (
+                                <MatrixItem
+                                  key={subj.id}
+                                  name={subj.name}
+                                  icon={<BookOpen className="w-4 h-4" />}
+                                  onDelete={() => removeSubject(subj.id)}
+                                />
+                              ))
                           )}
                         </div>
                       </div>
