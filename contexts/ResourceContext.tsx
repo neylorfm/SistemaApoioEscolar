@@ -54,7 +54,11 @@ interface ResourceContextData {
   semanticColors: SemanticColors;
   setSemanticColors: (colors: SemanticColors) => void;
   availableWeeks: number;
-  availableWeeks: number;
+  preBookingDays: number[];
+  setPreBookingDays: (days: number[]) => void;
+
+  useCancellationPenalty: boolean;
+  setUseCancellationPenalty: (value: boolean) => void;
 
   // Matriz Data
   classes: SchoolClass[];
@@ -130,6 +134,8 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [hasNightShift, setHasNightShiftState] = useState(true);
   const [lunchColor, setLunchColorState] = useState<string>('#f97316'); // Default Orange Hex
   const [availableWeeks, setAvailableWeeksState] = useState<number>(5);
+  const [preBookingDays, setPreBookingDaysState] = useState<number[]>([0, 1, 2, 3, 4, 6]); // Default Sun, Mon, Tue, Wed, Thu, Sat
+  const [useCancellationPenalty, setUseCancellationPenaltyState] = useState<boolean>(true);
   const [logoUrl, setLogoUrlState] = useState<string | null>(null);
   const [schoolSettingsId, setSchoolSettingsId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -567,6 +573,8 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
         setHasNightShiftState(data.hasNightShift);
         setLunchColorState(data.lunchColor);
         setAvailableWeeksState(data.availableWeeks);
+        if (data.pre_booking_days) setPreBookingDaysState(data.pre_booking_days);
+        setUseCancellationPenaltyState(data.use_cancellation_penalty !== false);
         setSemanticColorsState(data.semanticColors);
         setLogoUrlState(data.logo_url || data.logoUrl); // Handle both casings
 
@@ -683,6 +691,11 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
   const setLunchColor = (color: string) => {
     setLunchColorState(color);
     updateSchoolSetting('lunchColor', color);
+  };
+
+  const setPreBookingDays = (days: number[]) => {
+    setPreBookingDaysState(days);
+    updateSchoolSetting('pre_booking_days', days);
   };
 
 
@@ -1527,6 +1540,17 @@ export const ResourceProvider: React.FC<{ children: ReactNode }> = ({ children }
       semanticColors,
       setSemanticColors,
       availableWeeks,
+      preBookingDays,
+      setPreBookingDays,
+      useCancellationPenalty,
+      setUseCancellationPenalty: (val: boolean) => {
+        setUseCancellationPenaltyState(val);
+        if (schoolSettingsId) {
+          supabase.from('Escola').update({ use_cancellation_penalty: val }).eq('id', schoolSettingsId).then(({ error }) => {
+            if (error) console.error(error);
+          });
+        }
+      },
       classes,
       addClass,
       removeClass,

@@ -25,6 +25,9 @@ import {
   EyeOff,
   Mail,
   Shield,
+  LayoutGrid,
+  Users,
+  School,
   Image as ImageIcon,
   Palette,
   Check,
@@ -35,7 +38,7 @@ import {
   Library,
   CalendarRange,
   Box,
-  School,
+
   ChevronDown,
   Loader2,
   Search,
@@ -265,6 +268,7 @@ export const ResourceAdmin: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState('Todos');
   const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<Profissional | null>(null);
+  const [resourceToDelete, setResourceToDelete] = useState<string | null>(null);
 
   // Modal State
   const [modal, setModal] = useState<{
@@ -355,12 +359,42 @@ export const ResourceAdmin: React.FC = () => {
 
   const confirmDeleteUser = (user: Profissional) => {
     setUserToDelete(user);
+    setResourceToDelete(null); // Clear other delete states
     setModal({
       isOpen: true,
       type: 'warning',
       title: 'Excluir Usuário?',
       message: `Tem certeza que deseja remover o acesso de "${user.nome}"? Esta ação não pode ser desfeita.`
     });
+  };
+
+  const confirmDeleteResource = (id: string) => {
+    // Find resource name for better message
+    const resName = resources.find(r => r.id === id)?.name || 'Recurso';
+    setResourceToDelete(id);
+    setUserToDelete(null); // Clear other delete states
+    setModal({
+      isOpen: true,
+      type: 'warning',
+      title: 'EXCLUIR RECURSO?',
+      message: `ATENÇÃO: Você está prestes a excluir PERMANENTEMENTE o recurso "${resName}".\n\nIsso apagará TODO o histórico de agendamentos (passados e futuros), configurações e bloqueios.\n\nEsta ação NÃO pode ser desfeita. Tem certeza absoluta?`
+    });
+  };
+
+  const handleDeleteResource = async () => {
+    if (!resourceToDelete) return;
+    try {
+      // removeResource from context handles the DB call
+      await removeResource(resourceToDelete);
+      // Context updates state, we just need to close modal
+      toast.success('Recurso removido com sucesso.');
+      closeModal();
+      setResourceToDelete(null);
+    } catch (error: any) {
+      console.error("Delete Resource Error:", error);
+      toast.error(`Erro ao excluir recurso: ${error.message || 'Verifique dependências ou permissões.'}`);
+      closeModal();
+    }
   };
 
 
@@ -434,6 +468,10 @@ export const ResourceAdmin: React.FC = () => {
     setLunchColor,
     semanticColors,
     setSemanticColors,
+    preBookingDays,
+    setPreBookingDays,
+    useCancellationPenalty,
+    setUseCancellationPenalty,
 
     classes,
     addClass,
@@ -617,7 +655,7 @@ export const ResourceAdmin: React.FC = () => {
       id: Math.random().toString(36).substr(2, 9),
       name: newResourceName,
       type: finalType,
-      details: newResourceDetails || `Tipo: ${finalLabel}`,
+      details: newResourceDetails || `Tipo: ${finalLabel} `,
       iconBg,
       iconColor,
       allowed_roles: newAllowedRoles,
@@ -730,19 +768,32 @@ export const ResourceAdmin: React.FC = () => {
         />
 
         <main className="flex-1 flex flex-col p-4 md:p-8 overflow-hidden max-w-6xl mx-auto w-full">
-          <div className="flex items-center border-b border-slate-200 mb-6 overflow-x-auto">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors focus:outline-none whitespace-nowrap ${activeTab === tab.id
-                  ? 'text-primary-600 border-primary-600'
-                  : 'text-slate-500 border-transparent hover:text-slate-700 hover:border-slate-300'
-                  }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex items-center space-x-2 mb-8 overflow-x-auto pb-2 scrollbar-none">
+            {tabs.map((tab) => {
+              const Icon = tab.id === 'recursos' ? LayoutGrid :
+                tab.id === 'usuario' ? Users :
+                  tab.id === 'layout' ? School :
+                    Shield;
+
+              const isActive = activeTab === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`
+                    flex items-center space-x-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200
+                    ${isActive
+                      ? 'bg-slate-900 text-white shadow-md ring-2 ring-slate-900 ring-offset-2'
+                      : 'bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900 border border-slate-200'
+                    }
+                  `}
+                >
+                  <Icon size={16} strokeWidth={2.5} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex-1 overflow-y-auto pr-2 pb-4 space-y-6">
@@ -834,10 +885,10 @@ export const ResourceAdmin: React.FC = () => {
                                   setNewAllowedRoles([...newAllowedRoles, role]);
                                 }
                               }}
-                              className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isActive
+                              className={`px - 3 py - 1.5 rounded - full text - xs font - bold border transition - all ${isActive
                                 ? 'bg-primary-50 text-primary-700 border-primary-200'
                                 : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
-                                } ${isMandatory ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
+                                } ${isMandatory ? 'cursor-default opacity-80' : 'cursor-pointer'} `}
                               title={isMandatory ? "Obrigatório" : ""}
                             >
                               {role}
@@ -899,7 +950,7 @@ export const ResourceAdmin: React.FC = () => {
                       iconColor={res.iconColor}
                       active={res.active}
                       allowed_roles={res.allowed_roles}
-                      onDelete={removeResource}
+                      onDelete={confirmDeleteResource}
                       onEdit={handleEditResource}
                       onToggleActive={handleToggleActive}
                     />
@@ -948,10 +999,10 @@ export const ResourceAdmin: React.FC = () => {
                                         setEditAllowedRoles([...editAllowedRoles, role]);
                                       }
                                     }}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isActive
+                                    className={`px - 3 py - 1.5 rounded - full text - xs font - bold border transition - all ${isActive
                                       ? 'bg-primary-50 text-primary-700 border-primary-200'
                                       : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
-                                      } ${isMandatory ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
+                                      } ${isMandatory ? 'cursor-default opacity-80' : 'cursor-pointer'} `}
                                     title={isMandatory ? "Obrigatório" : ""}
                                   >
                                     {role}
@@ -1127,10 +1178,10 @@ export const ResourceAdmin: React.FC = () => {
                               <div>
                                 <h3 className="font-bold text-slate-800 group-hover:text-primary-600 transition-colors">{user.nome}</h3>
                                 <p className="text-xs text-slate-500 mb-3">{user.email}</p>
-                                <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${user.tipo === 'Administrador' ? 'bg-purple-100 text-purple-700' :
+                                <span className={`inline - flex px - 3 py - 1 rounded - full text - [10px] font - bold uppercase tracking - wider ${user.tipo === 'Administrador' ? 'bg-purple-100 text-purple-700' :
                                   user.tipo === 'Coordenador' ? 'bg-blue-100 text-blue-700' :
                                     'bg-slate-100 text-slate-600'
-                                  }`}>
+                                  } `}>
                                   {user.tipo}
                                 </span>
                               </div>
@@ -1430,14 +1481,14 @@ export const ResourceAdmin: React.FC = () => {
                       <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-200 flex flex-col sm:flex-row items-center w-full sm:w-auto">
                         <button
                           onClick={() => setHasNightShift(false)}
-                          className={`w-full sm:w-auto px-3 py-1.5 rounded-md text-sm font-medium transition-all flex justify-center sm:justify-start items-center gap-2 ${!hasNightShift ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                          className={`w - full sm: w - auto px - 3 py - 1.5 rounded - md text - sm font - medium transition - all flex justify - center sm: justify - start items - center gap - 2 ${!hasNightShift ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'} `}
                         >
                           <Sun className="w-4 h-4" />
                           Manhã/Tarde
                         </button>
                         <button
                           onClick={() => setHasNightShift(true)}
-                          className={`w-full sm:w-auto px-3 py-1.5 rounded-md text-sm font-medium transition-all flex justify-center sm:justify-start items-center gap-2 ${hasNightShift ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                          className={`w - full sm: w - auto px - 3 py - 1.5 rounded - md text - sm font - medium transition - all flex justify - center sm: justify - start items - center gap - 2 ${hasNightShift ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'} `}
                         >
                           <Moon className="w-4 h-4" />
                           Manhã/Tarde/Noite
@@ -1451,6 +1502,66 @@ export const ResourceAdmin: React.FC = () => {
                       {visibleTimeSlots.map((slot) => (
                         <TimeSlotInput key={slot.id} slot={slot} />
                       ))}
+                    </div>
+                  </div>
+
+                  <hr className="border-slate-100" />
+
+                  {/* Seção 3: Configuração de Pré-Reserva */}
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800 border-l-4 border-slate-800 pl-3">Pré-Reserva</h3>
+                      <p className="text-xs text-slate-500 mt-1 pl-4">Defina as regras para a fila de pré-reserva.</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 mb-4">
+                      <input
+                        type="checkbox"
+                        id="useCancellationPenalty"
+                        checked={useCancellationPenalty}
+                        onChange={(e) => setUseCancellationPenalty(e.target.checked)}
+                        className="w-5 h-5 rounded border-slate-300 text-slate-800 focus:ring-slate-500 cursor-pointer"
+                      />
+                      <label htmlFor="useCancellationPenalty" className="text-sm font-medium text-slate-700 cursor-pointer select-none">
+                        Penalizar cancelamentos no ranking (Score C)
+                      </label>
+                    </div>
+
+                    <p className="text-xs text-slate-500 mb-2">Dias permitidos para pré-reserva:</p>
+
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: 0, label: 'Domingo' },
+                        { id: 1, label: 'Segunda-feira' },
+                        { id: 2, label: 'Terça-feira' },
+                        { id: 3, label: 'Quarta-feira' },
+                        { id: 4, label: 'Quinta-feira' },
+                        // { id: 5, label: 'Sexta-feira' }, // Reserved for Consolidation
+                        { id: 6, label: 'Sábado' },
+                      ].map((day) => {
+                        const isSelected = preBookingDays.includes(day.id);
+                        return (
+                          <button
+                            key={day.id}
+                            onClick={() => {
+                              const newDays = isSelected
+                                ? preBookingDays.filter((d) => d !== day.id)
+                                : [...preBookingDays, day.id].sort();
+                              setPreBookingDays(newDays);
+                            }}
+                            className={`px - 3 py - 2 rounded - lg text - sm font - medium transition - all border flex items - center gap - 2 ${isSelected
+                              ? 'bg-primary-50 border-primary-200 text-primary-700 shadow-sm'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                              } `}
+                          >
+                            <div className={`w - 4 h - 4 rounded - full border flex items - center justify - center transition - colors ${isSelected ? 'border-primary-500 bg-primary-500 text-white' : 'border-slate-300 bg-white'
+                              } `}>
+                              {isSelected && <Check className="w-3 h-3" />}
+                            </div>
+                            {day.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1475,15 +1586,15 @@ export const ResourceAdmin: React.FC = () => {
                           <div className="relative w-full sm:w-[30%]">
                             <button
                               onClick={() => setIsSeriesOpen(!isSeriesOpen)}
-                              className={`w-full flex items-center justify-between rounded-lg border bg-white text-sm py-2 px-3 shadow-sm transition-all ${isSeriesOpen
+                              className={`w - full flex items - center justify - between rounded - lg border bg - white text - sm py - 2 px - 3 shadow - sm transition - all ${isSeriesOpen
                                 ? 'border-primary-600 ring-2 ring-primary-600/20'
                                 : 'border-slate-300 hover:border-slate-400 text-slate-700'
-                                }`}
+                                } `}
                             >
                               <span className={newClassSeries ? 'text-slate-800' : 'text-slate-400'}>
                                 {newClassSeries || 'Série...'}
                               </span>
-                              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isSeriesOpen ? 'rotate-180' : ''}`} />
+                              <ChevronDown className={`w - 4 h - 4 text - slate - 400 transition - transform duration - 200 ${isSeriesOpen ? 'rotate-180' : ''} `} />
                             </button>
 
                             {isSeriesOpen && (
@@ -1497,10 +1608,10 @@ export const ResourceAdmin: React.FC = () => {
                                         setNewClassSeries(opt);
                                         setIsSeriesOpen(false);
                                       }}
-                                      className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center justify-between ${newClassSeries === opt
+                                      className={`w - full text - left px - 3 py - 2 text - sm transition - colors flex items - center justify - between ${newClassSeries === opt
                                         ? 'bg-primary-50 text-primary-700 font-medium'
                                         : 'text-slate-700 hover:bg-slate-50'
-                                        }`}
+                                        } `}
                                     >
                                       {opt}
                                       {newClassSeries === opt && <Check className="w-3.5 h-3.5" />}
@@ -1536,7 +1647,7 @@ export const ResourceAdmin: React.FC = () => {
                             classes.map((cls) => (
                               <MatrixItem
                                 key={cls.id}
-                                name={`${cls.series} ${cls.name}`}
+                                name={`${cls.series} ${cls.name} `}
                                 icon={<GraduationCap className="w-4 h-4" />}
                                 onDelete={() => removeClass(cls.id)}
                               />
@@ -1572,7 +1683,7 @@ export const ResourceAdmin: React.FC = () => {
                         <div className="flex justify-end mb-2">
                           <button
                             onClick={() => setIsSubjectSorted(!isSubjectSorted)}
-                            className={`text-xs flex items-center gap-1 px-2 py-1 rounded transition-colors ${isSubjectSorted ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-slate-500 hover:bg-slate-100'}`}
+                            className={`text - xs flex items - center gap - 1 px - 2 py - 1 rounded transition - colors ${isSubjectSorted ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-slate-500 hover:bg-slate-100'} `}
                           >
                             <ArrowDownAZ className="w-3 h-3" />
                             {isSubjectSorted ? 'Ordenado A-Z' : 'Ordenar A-Z'}
@@ -1619,7 +1730,7 @@ export const ResourceAdmin: React.FC = () => {
                       <div className="flex items-center gap-3">
                         <div
                           className="w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors"
-                          style={{ backgroundColor: `${lunchColor}20`, borderColor: lunchColor, color: lunchColor }}
+                          style={{ backgroundColor: `${lunchColor} 20`, borderColor: lunchColor, color: lunchColor }}
                         >
                           <Utensils className="w-5 h-5" />
                         </div>
@@ -1793,7 +1904,10 @@ export const ResourceAdmin: React.FC = () => {
         type={modal.type}
         title={modal.title}
         message={modal.message}
-        onConfirm={modal.type === 'warning' ? handleDeleteUser : undefined}
+        onConfirm={modal.type === 'warning' ? () => {
+          if (userToDelete) handleDeleteUser();
+          if (resourceToDelete) handleDeleteResource();
+        } : undefined}
         showCancel={modal.type === 'warning'}
         confirmText={modal.type === 'warning' ? 'Sim, Excluir' : 'OK'}
       />

@@ -452,13 +452,117 @@ export const AcademicCalendar: React.FC = () => {
                                 Hoje
                             </button>
                             {!readOnly && (
-                                <button
-                                    onClick={handleOpenManageModal}
-                                    className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white font-bold text-xs rounded-lg hover:bg-slate-900 transition-colors shadow-sm uppercase"
-                                >
-                                    <Settings className="w-3.5 h-3.5" />
-                                    Gerenciar Períodos
-                                </button>
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            // Generate CSV with all available types as examples
+                                            const header = 'Data,Titulo,Tipo,Descricao';
+                                            const rows = (Object.keys(EVENT_TYPES) as CalendarEventType[]).map(type => {
+                                                const label = EVENT_TYPES[type].label;
+                                                // Create a dummy date or leave blank? Let's use a placeholder date
+                                                return `01/01/2026,Exemplo ${label},${label},Descrição para ${label}`;
+                                            });
+
+                                            const csvContent = [header, ...rows].join('\n');
+
+                                            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                                            const link = document.createElement('a');
+                                            const url = URL.createObjectURL(blob);
+                                            link.setAttribute('href', url);
+                                            link.setAttribute('download', 'modelo_completo_calendario.csv');
+                                            link.style.visibility = 'hidden';
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                        }}
+                                        className="flex items-center gap-2 px-3 py-2 bg-white text-indigo-600 font-bold text-xs rounded-lg border border-indigo-200 hover:bg-indigo-50 transition-colors shadow-sm uppercase"
+                                        title="Baixar modelo com todos os tipos"
+                                    >
+                                        <ArrowRight className="w-3.5 h-3.5 rotate-90" />
+                                        Modelo Completo
+                                    </button>
+                                    <label className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-lg hover:bg-indigo-700 transition-colors shadow-sm uppercase cursor-pointer">
+                                        Importar CSV
+                                        <input
+                                            type="file"
+                                            accept=".csv"
+                                            className="hidden"
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0];
+                                                if (!file) return;
+
+                                                const text = await file.text();
+                                                const lines = text.split('\n');
+                                                let count = 0;
+
+                                                // Expected format: Data,Titulo,Tipo,Descricao
+                                                // Skipping header if present (heuristic: check if first line has 'Data')
+                                                const startIndex = lines[0].toLowerCase().includes('data') ? 1 : 0;
+
+                                                for (let i = startIndex; i < lines.length; i++) {
+                                                    const line = lines[i].trim();
+                                                    if (!line) continue;
+
+                                                    // Use regex to handle quoted fields or simple split? 
+                                                    // Simple split for now: , or ;
+                                                    const parts = line.includes(';') ? line.split(';') : line.split(',');
+
+                                                    if (parts.length < 2) continue;
+
+                                                    let [dateStr, title, typeLabel, desc] = parts.map(p => p.trim());
+
+                                                    // Normalize Date (DD/MM/YYYY -> YYYY-MM-DD)
+                                                    if (dateStr.includes('/')) {
+                                                        const [day, month, year] = dateStr.split('/');
+                                                        dateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                                                    }
+
+                                                    // Normalize Type
+                                                    // Find key in EVENT_TYPES where label matches, or key matches
+                                                    let typeKey: CalendarEventType = 'outros';
+                                                    const normalizedLabel = typeLabel?.toLowerCase();
+
+                                                    const foundKey = (Object.keys(EVENT_TYPES) as CalendarEventType[]).find(k =>
+                                                        k.toLowerCase() === normalizedLabel ||
+                                                        EVENT_TYPES[k].label.toLowerCase() === normalizedLabel
+                                                    );
+
+                                                    if (foundKey) typeKey = foundKey;
+
+                                                    // Add Event
+                                                    // Note: This calls context function multiple times. 
+                                                    // Optimally we'd have a batchAdd, but addCalendarEvent is what we have.
+                                                    try {
+                                                        await addCalendarEvent({
+                                                            title: title || 'Sem Título',
+                                                            date: dateStr,
+                                                            type: typeKey,
+                                                            description: desc || ''
+                                                        });
+                                                        count++;
+                                                    } catch (err) {
+                                                        console.error('Error importing line:', line, err);
+                                                    }
+                                                }
+
+                                                if (count > 0) {
+                                                    alert(`${count} eventos importados com sucesso!`);
+                                                } else {
+                                                    alert('Nenhum evento importado. Verifique o formato do CSV (Data,Titulo,Tipo,Descricao).');
+                                                }
+                                                // Reset input
+                                                e.target.value = '';
+                                            }}
+                                        />
+                                    </label>
+                                    <button
+                                        onClick={handleOpenManageModal}
+                                        className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white font-bold text-xs rounded-lg hover:bg-slate-900 transition-colors shadow-sm uppercase"
+                                    >
+                                        <Settings className="w-3.5 h-3.5" />
+                                        Gerenciar Períodos
+                                    </button>
+                                </>
                             )}
                         </div>
                     </div>

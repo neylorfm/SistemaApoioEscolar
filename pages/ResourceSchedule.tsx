@@ -51,6 +51,8 @@ export const ResourceSchedule: React.FC = () => {
     classes,
     subjects,
     semanticColors,
+    preBookingDays,
+    useCancellationPenalty,
     isLoading
   } = useResource();
 
@@ -78,7 +80,8 @@ export const ResourceSchedule: React.FC = () => {
     disciplinaId: '',
     profissionalId: '',
     descricao: '',
-    isFixed: false
+    isFixed: false,
+    recurrenceEndDate: '' // New field
   });
 
   const [modalMode, setModalMode] = useState<'booking' | 'pre-booking'>('booking');
@@ -96,6 +99,8 @@ export const ResourceSchedule: React.FC = () => {
     type: 'info'
   });
 
+  const [showFixedDeleteConfirm, setShowFixedDeleteConfirm] = useState(false);
+
   // Use availableResources instead of resources
   const selectedResource = availableResources.find(r => r.id === selectedResourceId) || availableResources[0];
   const isPast = weekOffset < 0;
@@ -103,19 +108,12 @@ export const ResourceSchedule: React.FC = () => {
   const isPreBookingWeek = weekOffset >= 2; // Weeks 2, 3, 4 are pure pre-booking
   const isTransitionWeek = weekOffset === 1; // Week 1 (Next Week) - Special logic
 
-  // Logic permissions
-  // Week -3 to -1: Read only (History)
-  // Week 0: Current Week - Open for Booking (First come)
-  // Week 1: Next Week - Open for Booking (remainder) ONLY after Friday Noon of Week 0?
-  // Week 2, 3, 4: Future - Only Pre-Booking (Interest) on Tue/Wed/Thu
-
   // Read Only if week is past or user is not logged in
   const readOnly = isPast || !profile;
 
-
-
   // Permissions
   const isAdmin = profile?.tipo === 'Administrador' || profile?.tipo === 'Coordenador' || profile?.tipo === 'Colaborador';
+  const isCoordinator = profile?.tipo === 'Coordenador';
   const isTeacher = profile?.tipo === 'Professor';
 
   // --- Data Fetching ---
@@ -133,14 +131,10 @@ export const ResourceSchedule: React.FC = () => {
 
   // Date Logic
   const getWeekDates = (offset: number) => {
-    // Current date logic (using real dates now instead of hardcoded)
     const today = new Date();
-    // Adjust to Monday of the current week (or offset week)
     const day = today.getDay();
-    const diff = today.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
     const monday = new Date(today.setDate(diff));
-
-    // Apply offset
     monday.setDate(monday.getDate() + (offset * 7));
 
     const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'].map((name, i) => {
@@ -149,7 +143,7 @@ export const ResourceSchedule: React.FC = () => {
       return {
         name,
         date: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-        fullDate: d // Object for comparison
+        fullDate: d
       };
     });
 
@@ -164,14 +158,21 @@ export const ResourceSchedule: React.FC = () => {
     }
   };
 
+  // Helper to format date as YYYY-MM-DD in Local Time
+  const formatDateLocal = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const currentWeek = getWeekDates(weekOffset);
 
   // Fetch Bookings
   const fetchBookings = async () => {
     if (!selectedResourceId) return;
-
-    const startDate = currentWeek.start.toISOString().split('T')[0];
-    const endDate = currentWeek.end.toISOString().split('T')[0];
+    const startDate = formatDateLocal(currentWeek.start);
+    const endDate = formatDateLocal(currentWeek.end);
 
     const { data, error } = await supabase
       .from('Agendamentos')
@@ -185,10 +186,17 @@ export const ResourceSchedule: React.FC = () => {
       .gte('data', startDate)
       .lte('data', endDate);
 
+    // Debug Log
+    if (data && data.length > 0) {
+      console.log('[DEBUG] First booking:', data[0]);
+      console.log('[DEBUG] Range:', startDate, endDate);
+    }
+
     if (error) {
       console.error('Error fetching bookings:', error);
       toast.error(`Erro: ${error.message} (${error.code})`);
     } else {
+      console.log(`[DEBUG] Fetched ${data?.length || 0} bookings for range ${startDate} to ${endDate}`);
       setBookings(data || []);
     }
   };
@@ -196,9 +204,8 @@ export const ResourceSchedule: React.FC = () => {
   // Fetch PreReservas
   const fetchPreReservas = async () => {
     if (!selectedResourceId) return;
-
-    const startDate = currentWeek.start.toISOString().split('T')[0];
-    const endDate = currentWeek.end.toISOString().split('T')[0];
+    const startDate = formatDateLocal(currentWeek.start);
+    const endDate = formatDateLocal(currentWeek.end);
 
     const { data, error } = await supabase
       .from('PreReservas')
@@ -222,43 +229,15 @@ export const ResourceSchedule: React.FC = () => {
     fetchBookings();
     fetchPreReservas();
 
-    // Realtime Subscription for Agendamentos & PreReservas
     const channel = supabase.channel(`schedule_updates_${selectedResourceId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'Agendamentos',
-          filter: `recurso_id=eq.${selectedResourceId}`
-        },
-        () => {
-          fetchBookings();
-          // toast.info('Agenda atualizada');
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'PreReservas',
-          filter: `recurso_id=eq.${selectedResourceId}`
-        },
-        () => {
-          fetchPreReservas();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'Agendamentos', filter: `recurso_id=eq.${selectedResourceId}` }, () => fetchBookings())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'PreReservas', filter: `recurso_id=eq.${selectedResourceId}` }, () => fetchPreReservas())
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [selectedResourceId, weekOffset]);
 
-  // --- Early Returns (Moved after hooks to prevent crash) ---
-
-  // 1. Loading State
+  // --- Early Returns ---
   if (isLoading) {
     return (
       <div className="flex bg-slate-50 min-h-screen font-sans items-center justify-center">
@@ -271,7 +250,6 @@ export const ResourceSchedule: React.FC = () => {
     );
   }
 
-  // 2. Empty State (No Resources)
   if (availableResources.length === 0) {
     return (
       <div className="flex bg-slate-50 min-h-screen font-sans">
@@ -292,14 +270,11 @@ export const ResourceSchedule: React.FC = () => {
 
   // --- Handlers ---
 
-  const handleCellClick = (date: Date, slot: any) => {
-    const dateStr = date.toISOString().split('T')[0];
-
-    // Check for existing confirmed booking
+  const handleCellClick = (date: Date, slot: any, forcePreBookingView = false) => {
+    const dateStr = formatDateLocal(date);
     const existingBooking = bookings.find(b => b.horario_id === slot.id && b.data === dateStr);
 
     if (existingBooking) {
-      // ... same as before (Show details)
       setSelectedSlot({
         date,
         timeSlotId: slot.id,
@@ -312,66 +287,71 @@ export const ResourceSchedule: React.FC = () => {
         disciplinaId: existingBooking.disciplina_id,
         profissionalId: existingBooking.profissional_id,
         descricao: existingBooking.descricao || '',
-        isFixed: existingBooking.is_fixed || false
+        isFixed: existingBooking.is_fixed || false,
+        recurrenceEndDate: existingBooking.recurrence_end_date || ''
       });
       setModalMode('booking');
       setIsModalOpen(true);
       return;
     }
 
-    // Logic for New Entry
-    const dayOfWeek = date.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
-
-    // Admins can do anything anywhere
-    if (isAdmin) {
-      openModal(date, slot);
+    if (forcePreBookingView) {
+      openModal(date, slot, true);
       return;
     }
 
-    // Week 1 Logic (Next Week)
+    if (isAdmin) {
+      const hasPreBookings = preReservas.some(p =>
+        p.horario_id === slot.id &&
+        p.data === dateStr &&
+        p.status === 'pending'
+      );
+      if (hasPreBookings) {
+        openModal(date, slot, true);
+      } else {
+        openModal(date, slot);
+      }
+      return;
+    }
+
     if (isTransitionWeek) {
       const today = new Date();
-      // Simple: Get Monday of the real current week to find this week's Friday
       const realToday = new Date();
       const currentDay = realToday.getDay();
       const diffToMonday = realToday.getDate() - currentDay + (currentDay === 0 ? -6 : 1);
       const realMonday = new Date(realToday);
       realMonday.setDate(diffToMonday);
-
       const realFriday = new Date(realMonday);
       realFriday.setDate(realMonday.getDate() + 4);
-      realFriday.setHours(0, 0, 0, 0); // Open at 00:00 AM Friday
+      realFriday.setHours(0, 0, 0, 0);
 
       if (today < realFriday) {
         toast.info("Agendamentos para a próxima semana só abrem na Sexta-feira da semana atual.");
         return;
       }
-      // If passed Friday, allow normal booking
       openModal(date, slot);
       return;
     }
 
-    // Future Weeks (2, 3, 4) Logic - Pre-Booking Only
     if (isPreBookingWeek) {
       const todayDay = new Date().getDay();
-      const isWindowOpen = todayDay >= 2 && todayDay <= 4; // 2=Tue, 3=Wed, 4=Thu
+      const allowedDays = preBookingDays || [0, 1, 2, 3, 4, 6];
+      const isWindowOpen = allowedDays.includes(todayDay);
 
-      if (!isWindowOpen) {
-        toast.info("Janelas de Pré-Reserva abrem apenas Terça, Quarta e Quinta.");
+      if (!isWindowOpen && !isAdmin) {
+        const daysMap = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+        const allowedNames = allowedDays.map(d => daysMap[d]).join(', ');
+        toast.info(`Janelas de Pré-Reserva abrem apenas: ${allowedNames}.`);
         return;
       }
-
-      // It is Pre-Booking Mode
-      openModal(date, slot, true); // true = isPreBooking
+      openModal(date, slot, true);
       return;
     }
 
-    // Week 0 Logic (Current) - Free for all (First come)
     openModal(date, slot);
   };
 
   const openModal = (date: Date, slot: any, isPreBooking = false) => {
-    // Check Role Permissions
     const userRole = profile?.tipo || '';
     if (!isAdmin && !isPreBooking) {
       if (selectedResource?.allowed_roles && selectedResource.allowed_roles.length > 0) {
@@ -398,11 +378,11 @@ export const ResourceSchedule: React.FC = () => {
       disciplinaId: '',
       profissionalId: isTeacher && profile?.id ? profile.id : '',
       descricao: '',
-      isFixed: false
+      isFixed: false,
+      recurrenceEndDate: ''
     });
     setModalMode(isPreBooking ? 'pre-booking' : 'booking');
     setIsModalOpen(true);
-    // Fetch ranking if pre-booking
     if (isPreBooking || modalMode === 'pre-booking') {
       fetchRanking(slot.id, date);
     } else {
@@ -414,7 +394,7 @@ export const ResourceSchedule: React.FC = () => {
     if (!selectedResourceId) return;
     const { data, error } = await supabase.rpc('get_slot_ranking', {
       p_recurso_id: selectedResourceId,
-      p_data: date.toISOString().split('T')[0],
+      p_data: formatDateLocal(date),
       p_horario_id: slotId
     });
     if (error) console.error(error);
@@ -424,17 +404,10 @@ export const ResourceSchedule: React.FC = () => {
   const handleSave = async () => {
     if (!selectedSlot || !selectedResourceId) return;
 
-    // Validate fields based on mode
     if (modalMode === 'booking' && (!formData.turmaId || !formData.disciplinaId)) {
       toast.error('Preencha a turma e a disciplina');
       return;
     }
-
-    // For Pre-Booking, maybe we don't need Turma/Disciplina? 
-    // "A Pré-Reserva não garante o recursos, e permite que possa cadastrar o interesse em qualquer aula"
-    // Usually interest implies "I want to teach X to Y class". So let's keep it required unless stated otherwise.
-    // User said "cadastrar o interesse em qualquer aula".
-    // Let's assume fields are required for now for better data.
 
     const profId = isAdmin ? formData.profissionalId : (profile?.id || '');
     if (!profId) {
@@ -447,11 +420,10 @@ export const ResourceSchedule: React.FC = () => {
       return;
     }
 
-    const dateStr = selectedSlot.date.toISOString().split('T')[0];
+    const dateStr = formatDateLocal(selectedSlot.date);
 
     try {
       if (modalMode === 'pre-booking') {
-        // Insert into PreReservas
         const { error } = await supabase.from('PreReservas').insert([{
           recurso_id: selectedResourceId,
           horario_id: selectedSlot.timeSlotId,
@@ -469,10 +441,6 @@ export const ResourceSchedule: React.FC = () => {
         return;
       }
 
-      // Standard Booking Logic
-      // Check limits first (though DB trigger does it too, nice to check UI side or just rely on DB)
-      // Rely on DB trigger for limits.
-
       const basePayload = {
         recurso_id: selectedResourceId,
         horario_id: selectedSlot.timeSlotId,
@@ -480,34 +448,143 @@ export const ResourceSchedule: React.FC = () => {
         disciplina_id: formData.disciplinaId,
         profissional_id: profId,
         descricao: formData.descricao,
-        is_fixed: isAdmin ? formData.isFixed : false
+        is_fixed: isAdmin ? formData.isFixed : false,
+        recurrence_end_date: (isAdmin && formData.isFixed && formData.recurrenceEndDate) ? formData.recurrenceEndDate : null
       };
 
-      if (isAdmin && formData.isFixed) {
-        // ... (Fixed logic same as before)
-        const baseDate = new Date(selectedSlot.date);
-        baseDate.setDate(baseDate.getDate() - (weekOffset * 7));
-        const payloads = [];
-        const TOTAL_WEEKS = 5; // Current + 4 Future
-        for (let i = 0; i < TOTAL_WEEKS; i++) {
-          const d = new Date(baseDate);
-          d.setDate(d.getDate() + (i * 7));
-          payloads.push({
-            ...basePayload,
-            data: d.toISOString().split('T')[0]
-          });
+      // --- EDIT MODE ---
+      if (selectedSlot.existingBooking) {
+        if (isAdmin && selectedSlot.existingBooking.is_fixed) {
+          // Fixed Booking Edit Logic
+          const newEndDate = basePayload.recurrence_end_date;
+
+          if (!confirm('Esta ação irá alterar as ocorrências futuras. Confirmar?')) return;
+
+          // 1. Update details for THIS and FUTURE occurrences
+          // We target the "Series": Same Resource + Slot + Fixed=True 
+          // (and maybe Same Prof/Turma logic, but usually Resource+Slot+Fixed is unique enough for the 'slot owner')
+          const { error: updateError } = await supabase
+            .from('Agendamentos')
+            .update({
+              turma_id: basePayload.turma_id,
+              disciplina_id: basePayload.disciplina_id,
+              profissional_id: basePayload.profissional_id, // Allow changing prof? Yes, admin might reassign
+              descricao: basePayload.descricao,
+              recurrence_end_date: newEndDate
+            })
+            .eq('recurso_id', selectedResourceId)
+            .eq('horario_id', selectedSlot.timeSlotId)
+            .eq('is_fixed', true)
+            .gte('data', dateStr); // Update from selected date onwards
+
+          if (updateError) throw updateError;
+
+          // 2. Handle CUTOFF (End Date)
+          if (newEndDate) {
+            const { error: deleteError } = await supabase
+              .from('Agendamentos')
+              .delete()
+              .eq('recurso_id', selectedResourceId)
+              .eq('horario_id', selectedSlot.timeSlotId)
+              .eq('is_fixed', true)
+              .gt('data', newEndDate); // Strictly greater than End Date
+
+            if (deleteError) throw deleteError;
+          }
+
+          toast.success('Série de agendamentos atualizada!');
+
+        } else {
+          // Normal Edit (Single)
+          const { error } = await supabase
+            .from('Agendamentos')
+            .update(basePayload)
+            .eq('id', selectedSlot.existingBooking.id);
+
+          if (error) throw error;
+          toast.success('Agendamento atualizado!');
         }
-        const { error } = await supabase.from('Agendamentos').insert(payloads);
-        if (error) throw error;
+
       } else {
-        const { error } = await supabase.from('Agendamentos').insert([{
-          ...basePayload,
-          data: dateStr
-        }]);
-        if (error) throw error;
+        // --- CREATE MODE ---
+        if (isAdmin && formData.isFixed) {
+          const baseDate = new Date(selectedSlot.date);
+          baseDate.setDate(baseDate.getDate() - (weekOffset * 7)); // Adjust specific logic if needed? No, just use selected date as start.
+          // Wait, the original logic used 'weekOffset' to calculate start? 
+          // If I am in Week 2, and click Monday, I want to start Monday Week 2.
+          // original logic: baseDate.setDate(baseDate.getDate() - (weekOffset * 7)) -> This moves it back to "Week 0" (Current Week).
+          // Why? Maybe to generate "from the start of the view"? 
+          // Actually, if I click a future date, I usually want to start FROM that date.
+          // Let's assume the user selects the START date of the series.
+
+          // Re-reading original code logic (lines 439-440 of original view):
+          // const baseDate = new Date(selectedSlot.date);
+          // baseDate.setDate(baseDate.getDate() - (weekOffset * 7)); 
+          // This seems odd if I'm booking in the future. 
+          // Ah, 'weekOffset' is the viewer offset. 
+          // If I view Week +1, and click Monday... 'selectedSlot.date' IS Monday Week +1.
+          // If I subtract weekOffset*7, I go back to Monday Current Week.
+          // Maybe the original intention was to always back-fill to current week?
+          // OR maybe there was a misunderstanding of 'selectedSlot.date'.
+          // Let's stick to "From Selected Date" for safety in the new logic or keep original if it works?
+          // I will keep original structure but use selectedSlot.date as the anchor.
+          // Actually, let's simplify: Start from the date user CLICKED.
+
+          let loopDate = new Date(selectedSlot.date);
+          // Normalize to midnight to avoid time issues impacting comparison
+          loopDate.setHours(0, 0, 0, 0);
+
+          const payloads = [];
+
+          // Determine how many weeks to generate.
+          // If EndDate is set, generate until EndDate.
+          // If NOT set, generate typical amount (e.g. 5 weeks or until end of semester).
+          // Since we don't have "Semester End", we stick to a reasonable limit (e.g. 12 weeks/3 months) or the original 5.
+          // Let's increment to 12 weeks to be more useful, or use EndDate if present.
+
+          const maxWeeks = 20; // Increase slightly
+          // Parse endDate string correctly handling timezone offset if necessary, 
+          // or just compare YYYY-MM-DD strings to be safer.
+          // But here, using Date objects at midnight is also fine.
+          // Adding "T00:00:00" ensures it's treated as local midnight (or UTC depending on env, but consistent).
+          // Actually, let's use string comparison for robustness.
+
+          const endDateStr = basePayload.recurrence_end_date;
+
+          for (let i = 0; i < maxWeeks; i++) {
+            // Create date string for current iteration YYYY-MM-DD
+            // Use loopDate which is now normalized to local midnight
+            // Be careful with timezone shifts. 
+            // safest: 
+            const yearn = loopDate.getFullYear();
+            const monthn = String(loopDate.getMonth() + 1).padStart(2, '0');
+            const dayn = String(loopDate.getDate()).padStart(2, '0');
+            const dStr = `${yearn}-${monthn}-${dayn}`;
+
+            // Stop if we exceed End Date (lexicographical comparison works for ISO dates)
+            if (endDateStr && dStr > endDateStr) break;
+
+            payloads.push({
+              ...basePayload,
+              data: dStr
+            });
+
+            // Next week
+            loopDate.setDate(loopDate.getDate() + 7);
+          }
+
+          const { error } = await supabase.from('Agendamentos').insert(payloads);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('Agendamentos').insert([{
+            ...basePayload,
+            data: dateStr
+          }]);
+          if (error) throw error;
+        }
+        toast.success('Agendamento realizado!');
       }
 
-      toast.success('Agendamento realizado!');
       setIsModalOpen(false);
       fetchBookings();
 
@@ -527,30 +604,97 @@ export const ResourceSchedule: React.FC = () => {
 
     const isFixed = selectedSlot.existingBooking.is_fixed;
 
-    let deleteQuery = supabase.from('Agendamentos').delete();
-
     if (isFixed) {
-      if (!confirm('Este é um agendamento FIXO. Deseja remover TODAS as recorrências deste agendamento para este horário?')) return;
-
-      // Delete all fixed bookings for this slot/resource
-      deleteQuery = deleteQuery
-        .eq('recurso_id', selectedResourceId)
-        .eq('horario_id', selectedSlot.timeSlotId)
-        .eq('is_fixed', true);
+      setShowFixedDeleteConfirm(true);
+      return;
     } else {
       if (!confirm('Tem certeza que deseja remover este agendamento?')) return;
-      deleteQuery = deleteQuery.eq('id', selectedSlot.existingBooking.id);
+      const { error } = await supabase.from('Agendamentos').delete().eq('id', selectedSlot.existingBooking.id);
+
+      if (error) {
+        toast.error(`Erro ao excluir: ${error.message}`);
+      } else {
+        toast.success('Agendamento removido');
+        setIsModalOpen(false);
+        fetchBookings();
+      }
+    }
+  };
+
+  const executeFixedBookingDeletion = async () => {
+    if (!selectedSlot || !selectedResourceId) return;
+
+    const selectedDateStr = formatDateLocal(selectedSlot.date);
+    const prevDay = new Date(selectedSlot.date);
+    prevDay.setDate(prevDay.getDate() - 1);
+    const prevDayStr = formatDateLocal(prevDay);
+
+    // 1. Delete Future Bookings (>= Selected Date)
+    const { error: deleteError } = await supabase
+      .from('Agendamentos')
+      .delete()
+      .eq('recurso_id', selectedResourceId)
+      .eq('horario_id', selectedSlot.timeSlotId)
+      .eq('is_fixed', true)
+      .gte('data', selectedDateStr);
+
+    if (deleteError) {
+      toast.error('Erro ao excluir futuros: ' + deleteError.message);
+      setShowFixedDeleteConfirm(false); // Close modal on error too? Or keep open? Close is safer specificially if error toast shown.
+      return;
     }
 
-    const { error } = await deleteQuery;
+    // 2. Update Past Bookings to Stop Recurrence
+    const { error: updateError } = await supabase
+      .from('Agendamentos')
+      .update({ recurrence_end_date: prevDayStr })
+      .eq('recurso_id', selectedResourceId)
+      .eq('horario_id', selectedSlot.timeSlotId)
+      .eq('is_fixed', true)
+      .lt('data', selectedDateStr);
 
-    if (error) {
-      console.error(error);
-      toast.error('Erro ao excluir agendamento');
-    } else {
-      toast.success(isFixed ? 'Agendamentos fixos removidos' : 'Agendamento removido');
-      setIsModalOpen(false);
-      fetchBookings();
+    if (updateError) {
+      console.error('Error updating past recurrence:', updateError);
+    }
+
+    toast.success('Agendamento recorrente encerrado.');
+    setShowFixedDeleteConfirm(false);
+    setIsModalOpen(false);
+    fetchBookings();
+  };
+
+  const handleRemovePreBooking = async (profissionalId: string) => {
+    // Permission check
+    const isOwner = profissionalId === profile?.id;
+    const canDelete = isAdmin || isCoordinator || isOwner;
+
+    if (!canDelete) {
+      toast.error('Você não tem permissão para remover este interesse.');
+      return;
+    }
+
+    if (!confirm('Tem certeza que deseja remover este interesse da fila?')) return;
+
+    if (!selectedResourceId || !selectedSlot) return;
+
+    try {
+      const { error } = await supabase
+        .from('PreReservas')
+        .delete()
+        .eq('recurso_id', selectedResourceId)
+        .eq('horario_id', selectedSlot.timeSlotId)
+        .eq('data', formatDateLocal(selectedSlot.date))
+        .eq('profissional_id', profissionalId);
+
+      if (error) throw error;
+
+      toast.success('Interesse removido com sucesso!');
+      // Refresh data
+      fetchRanking(selectedSlot.timeSlotId, selectedSlot.date);
+      fetchPreReservas(); // Update grid indicator
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Erro ao remover: ' + err.message);
     }
   };
 
@@ -697,8 +841,8 @@ export const ResourceSchedule: React.FC = () => {
 
                     const { error } = await supabase.rpc('consolidate_schedule', {
                       p_recurso_id: selectedResourceId,
-                      p_start_date: currentWeek.start.toISOString().split('T')[0],
-                      p_end_date: currentWeek.end.toISOString().split('T')[0]
+                      p_start_date: formatDateLocal(currentWeek.start),
+                      p_end_date: formatDateLocal(currentWeek.end)
                     });
 
                     if (error) {
@@ -775,7 +919,7 @@ export const ResourceSchedule: React.FC = () => {
 
                       {/* Day Columns */}
                       {currentWeek.days.map((day) => {
-                        const dateStr = day.fullDate.toISOString().split('T')[0];
+                        const dateStr = formatDateLocal(day.fullDate);
                         const booking = bookings.find(b => b.horario_id === slot.id && b.data === dateStr);
 
                         // Check if current user owns this booking
@@ -828,12 +972,42 @@ export const ResourceSchedule: React.FC = () => {
                                 )}
                               </div>
                             ) : (
-                              // Empty Slot
-                              !readOnly && (
-                                <div className="w-full h-full border-2 border-dashed border-transparent hover:border-slate-300/50 rounded flex items-center justify-center transition-all group cursor-pointer opacity-50 hover:opacity-100">
-                                  <Plus className="text-slate-400 opacity-0 group-hover:opacity-100 transform scale-75 group-hover:scale-100 transition-all w-5 h-5" />
-                                </div>
-                              )
+                              // Check for Pre-Bookings (Interests)
+                              (() => {
+                                const slotPreReservas = preReservas.filter(p => p.horario_id === slot.id && p.data === dateStr);
+                                if (slotPreReservas.length > 0) {
+                                  return (
+                                    <div
+                                      onClick={() => handleCellClick(day.fullDate, slot, true)}
+                                      className="w-full h-full border-l-4 border-indigo-300 bg-indigo-50 hover:bg-indigo-100 rounded-r p-2 flex flex-col justify-center cursor-pointer transition-all shadow-sm group"
+                                    >
+                                      <div className="flex items-center gap-1.5 mb-1 text-indigo-700">
+                                        <History className="w-3.5 h-3.5" />
+                                        <span className="text-xs font-bold uppercase truncate">
+                                          {slotPreReservas.length} {slotPreReservas.length === 1 ? 'Interessado' : 'Interessados'}
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-indigo-600/80 mt-1 leading-tight group-hover:text-indigo-800">
+                                        Clique para ver a fila
+                                      </p>
+
+                                      {/* Preview First Interest */}
+                                      <div className="mt-1.5 pt-1.5 border-t border-indigo-100/50">
+                                        <p className="text-[9px] text-indigo-500 truncate">
+                                          1º: <span className="font-medium">{slotPreReservas[0].profissional?.alias || slotPreReservas[0].profissional?.nome?.split(' ')[0]}</span>
+                                        </p>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                // Empty Slot Standard
+                                return !readOnly && (
+                                  <div className="w-full h-full border-2 border-dashed border-transparent hover:border-slate-300/50 rounded flex items-center justify-center transition-all group cursor-pointer opacity-50 hover:opacity-100">
+                                    <Plus className="text-slate-400 opacity-0 group-hover:opacity-100 transform scale-75 group-hover:scale-100 transition-all w-5 h-5" />
+                                  </div>
+                                );
+                              })()
                             )}
                           </div>
                         );
@@ -894,163 +1068,254 @@ export const ResourceSchedule: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Read Only existing info OR Form */}
-                {selectedSlot.existingBooking && !isAdmin && selectedSlot.existingBooking.profissional_id !== profile?.professionalId ? (
-                  // View Mode (Other user's booking)
+                {/* PRE-BOOKING MODE: Show Queue First */}
+                {modalMode === 'pre-booking' ? (
                   <div className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-400 uppercase">Profissional</label>
-                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-700 font-medium">
-                        {selectedSlot.existingBooking.profissional?.nome}
+                    {/* Ranking Display */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-indigo-600 uppercase flex items-center gap-2">
+                          <History className="w-3 h-3" /> Fila de Interesse (Ranking)
+                        </h4>
+                        <span className="text-[10px] text-slate-400">Atualizado em tempo real</span>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold text-slate-400 uppercase">Turma</label>
-                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-700 font-medium">
-                          {selectedSlot.existingBooking.turma?.series} {selectedSlot.existingBooking.turma?.name}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold text-slate-400 uppercase">Disciplina</label>
-                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-700 font-medium">
-                          {selectedSlot.existingBooking.disciplina?.name}
-                        </div>
-                      </div>
-                      {selectedSlot.existingBooking.descricao && (
-                        <div className="space-y-1 col-span-2">
-                          <label className="text-xs font-bold text-slate-400 uppercase">Observação</label>
-                          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-600 text-sm italic">
-                            {selectedSlot.existingBooking.descricao}
+
+                      <div className="bg-slate-50 rounded-xl border border-slate-100 p-2 max-h-[200px] overflow-y-auto custom-scrollbar">
+                        {slotRanking.length === 0 ? (
+                          <div className="text-center py-4 text-slate-400 text-xs italic">
+                            Seja o primeiro a registrar interesse!
                           </div>
-                        </div>
-                      )}
+                        ) : (
+                          <div className="space-y-1">
+                            {slotRanking.map((rankItem) => (
+                              <div key={rankItem.profissional_id} className={`flex items-center justify-between p-2 rounded-lg text-xs ${rankItem.profissional_id === profile?.id ? 'bg-indigo-50 border border-indigo-100' : 'bg-white border border-slate-100'}`}>
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-5 h-5 flex items-center justify-center rounded-full font-bold ${rankItem.rank === 1 ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>
+                                    {rankItem.rank}º
+                                  </span>
+                                  <span className={`font-medium ${rankItem.profissional_id === profile?.id ? 'text-indigo-700' : 'text-slate-600'}`}>
+                                    {rankItem.alias || rankItem.nome}
+                                    {rankItem.profissional_id === profile?.id && " (Você)"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <div className="flex items-center gap-2 text-[10px] text-slate-400" title="Score Detalhado (A+C+O)">
+                                    <span className="font-mono bg-slate-100 px-1 rounded">S:{rankItem.score}</span>
+                                    <span className="opacity-50">|</span>
+                                    <span title="Agendamentos (21d)">A:{rankItem.score_a}</span>
+                                    {useCancellationPenalty && (
+                                      <span title="Cancelamentos (31d)">C:{rankItem.score_c}</span>
+                                    )}
+                                    <span title="Ordem de Solicitação">O:{rankItem.score_o || rankItem.score_t}</span>
+                                  </div>
+
+                                  {/* Delete Button for Owner or Admin/Coord */}
+                                  {(profile?.id === rankItem.profissional_id || isAdmin || isCoordinator) && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRemovePreBooking(rankItem.profissional_id);
+                                      }}
+                                      className="p-1 hover:bg-red-100 rounded text-slate-400 hover:text-red-500 transition-colors"
+                                      title="Remover da fila"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-tight">
+                        Cálculo do Ranking: Soma dos Agendamentos {useCancellationPenalty ? 'e Cancelamentos' : ''} dos últimos 21 dias + Ordem de Solicitação. Quanto menor a pontuação, maior a prioridade.
+                      </p>
                     </div>
+
+                    {/* Show Form ONLY if Queue is Empty OR user is not Admin (Professors can join queue) */}
+                    {/* Actually, Professors see form to join queue. Admins ONLY see form if queue is empty to Confirm. */}
+                    {(!isAdmin || slotRanking.length === 0) && (
+                      <div className="space-y-4 pt-2 border-t border-slate-100">
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Turma</label>
+                          <select
+                            value={formData.turmaId}
+                            onChange={e => setFormData({ ...formData, turmaId: e.target.value })}
+                            className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm"
+                          >
+                            <option value="">Selecione a turma...</option>
+                            {classes.map(c => (
+                              <option key={c.id} value={c.id}>{c.series} - {c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Disciplina</label>
+                          <select
+                            value={formData.disciplinaId}
+                            onChange={e => setFormData({ ...formData, disciplinaId: e.target.value })}
+                            className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm"
+                          >
+                            <option value="">Selecione a disciplina...</option>
+                            {subjects.map(s => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Observação / Solicitação (Opcional)</label>
+                          <textarea
+                            value={formData.descricao}
+                            onChange={e => setFormData({ ...formData, descricao: e.target.value })}
+                            placeholder="Ex: Preciso de cabo HDMI, Caixa de Som..."
+                            className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm min-h-[80px] resize-y"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  // Edit/Create Mode
-                  <div className="space-y-4">
-
-                    {/* Professional Select - Only for Admins */}
-                    {isAdmin && (
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold text-slate-500 uppercase ml-1">Profissional</label>
-                        <select
-                          value={formData.profissionalId}
-                          onChange={e => setFormData({ ...formData, profissionalId: e.target.value })}
-                          disabled={!!selectedSlot.existingBooking} // Disable changing owner on edit for now (simpler) or let admin change? Let's disable for safety unless requested.
-                          className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm"
-                        >
-                          <option value="">Selecione o profissional...</option>
-                          {allProfessionals.map(p => (
-                            <option key={p.id} value={p.id}>{p.nome}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-500 uppercase ml-1">Turma</label>
-                      <select
-                        value={formData.turmaId}
-                        onChange={e => setFormData({ ...formData, turmaId: e.target.value })}
-                        disabled={!!selectedSlot.existingBooking && !isAdmin && selectedSlot.existingBooking.profissional_id !== profile?.id}
-                        className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm"
-                      >
-                        <option value="">Selecione a turma...</option>
-                        {classes.map(c => (
-                          <option key={c.id} value={c.id}>{c.series} - {c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-500 uppercase ml-1">Disciplina</label>
-                      <select
-                        value={formData.disciplinaId}
-                        onChange={e => setFormData({ ...formData, disciplinaId: e.target.value })}
-                        disabled={!!selectedSlot.existingBooking && !isAdmin && selectedSlot.existingBooking.profissional_id !== profile?.id}
-                        className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm"
-                      >
-                        <option value="">Selecione a disciplina...</option>
-                        {subjects.map(s => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-500 uppercase ml-1">Observação / Solicitação (Opcional)</label>
-                      <textarea
-                        value={formData.descricao}
-                        onChange={e => setFormData({ ...formData, descricao: e.target.value })}
-                        disabled={isAdmin ? false : !!selectedSlot.existingBooking} // Admins can edit description? Or just during creation? User implies editability. Let's assume edit on modal if authorized.
-                        placeholder="Ex: Preciso de cabo HDMI, Caixa de Som..."
-                        className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm min-h-[80px] resize-y"
-                      />
-                    </div>
-
-                    {isAdmin && (
-                      <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
-                        <input
-                          type="checkbox"
-                          id="isFixed"
-                          checked={formData.isFixed}
-                          onChange={e => setFormData({ ...formData, isFixed: e.target.checked })}
-                          className="w-5 h-5 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
-                        />
-                        <label htmlFor="isFixed" className="text-sm font-bold text-amber-800 cursor-pointer select-none">
-                          Agendamento Fixo (Semanal)
-                          <p className="text-xs text-amber-600 font-normal">
-                            Replica este agendamento para todas as semanas disponíveis.
-                          </p>
-                        </label>
-                      </div>
-                    )}
-                  </div>
-
-                )}
-
-                {/* Ranking Display for Pre-Booking */}
-                {modalMode === 'pre-booking' && (
-                  <div className="space-y-2 pt-2 border-t border-slate-100">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-indigo-600 uppercase flex items-center gap-2">
-                        <History className="w-3 h-3" /> Fila de Interesse (Ranking)
-                      </h4>
-                      <span className="text-[10px] text-slate-400">Atualizado em tempo real</span>
-                    </div>
-
-                    <div className="bg-slate-50 rounded-xl border border-slate-100 p-2 max-h-[150px] overflow-y-auto custom-scrollbar">
-                      {slotRanking.length === 0 ? (
-                        <div className="text-center py-4 text-slate-400 text-xs italic">
-                          Seja o primeiro a registrar interesse!
-                        </div>
-                      ) : (
+                  /* NORMAL BOOKING MODE */
+                  <>
+                    {selectedSlot.existingBooking && !isAdmin && selectedSlot.existingBooking.profissional_id !== profile?.professionalId ? (
+                      // View Mode (Other user's booking)
+                      <div className="space-y-4">
                         <div className="space-y-1">
-                          {slotRanking.map((rankItem) => (
-                            <div key={rankItem.profissional_id} className={`flex items-center justify-between p-2 rounded-lg text-xs ${rankItem.profissional_id === profile?.id ? 'bg-indigo-50 border border-indigo-100' : 'bg-white border border-slate-100'}`}>
-                              <div className="flex items-center gap-2">
-                                <span className={`w-5 h-5 flex items-center justify-center rounded-full font-bold ${rankItem.rank === 1 ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>
-                                  {rankItem.rank}º
-                                </span>
-                                <span className={`font-medium ${rankItem.profissional_id === profile?.id ? 'text-indigo-700' : 'text-slate-600'}`}>
-                                  {rankItem.alias || rankItem.nome}
-                                  {rankItem.profissional_id === profile?.id && " (Você)"}
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-slate-400" title="Score de Uso (Menor é melhor)">
-                                Score: {rankItem.score}
+                          <label className="text-xs font-bold text-slate-400 uppercase">Profissional</label>
+                          <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-700 font-medium">
+                            {selectedSlot.existingBooking.profissional?.nome}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-400 uppercase">Turma</label>
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-700 font-medium">
+                              {selectedSlot.existingBooking.turma?.series} {selectedSlot.existingBooking.turma?.name}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-400 uppercase">Disciplina</label>
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-700 font-medium">
+                              {selectedSlot.existingBooking.disciplina?.name}
+                            </div>
+                          </div>
+                          {selectedSlot.existingBooking.descricao && (
+                            <div className="space-y-1 col-span-2">
+                              <label className="text-xs font-bold text-slate-400 uppercase">Observação</label>
+                              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-600 text-sm italic">
+                                {selectedSlot.existingBooking.descricao}
                               </div>
                             </div>
-                          ))}
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-slate-400 leading-tight">
-                      * O critério de desempate é menor uso nas últimas 4 semanas, seguido por quem registrou interesse primeiro.
-                    </p>
-                  </div>
+                      </div>
+                    ) : (
+                      // Edit/Create Mode
+                      <div className="space-y-4">
+
+                        {/* Professional Select - Only for Admins */}
+                        {isAdmin && (
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Profissional</label>
+                            <select
+                              value={formData.profissionalId}
+                              onChange={e => setFormData({ ...formData, profissionalId: e.target.value })}
+                              disabled={!!selectedSlot.existingBooking}
+                              className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm"
+                            >
+                              <option value="">Selecione o profissional...</option>
+                              {allProfessionals.map(p => (
+                                <option key={p.id} value={p.id}>{p.nome}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Turma</label>
+                          <select
+                            value={formData.turmaId}
+                            onChange={e => setFormData({ ...formData, turmaId: e.target.value })}
+                            disabled={!!selectedSlot.existingBooking && !isAdmin && selectedSlot.existingBooking.profissional_id !== profile?.id}
+                            className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm"
+                          >
+                            <option value="">Selecione a turma...</option>
+                            {classes.map(c => (
+                              <option key={c.id} value={c.id}>{c.series} - {c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Disciplina</label>
+                          <select
+                            value={formData.disciplinaId}
+                            onChange={e => setFormData({ ...formData, disciplinaId: e.target.value })}
+                            disabled={!!selectedSlot.existingBooking && !isAdmin && selectedSlot.existingBooking.profissional_id !== profile?.id}
+                            className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm"
+                          >
+                            <option value="">Selecione a disciplina...</option>
+                            {subjects.map(s => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Observação / Solicitação (Opcional)</label>
+                          <textarea
+                            value={formData.descricao}
+                            onChange={e => setFormData({ ...formData, descricao: e.target.value })}
+                            disabled={isAdmin ? false : !!selectedSlot.existingBooking}
+                            placeholder="Ex: Preciso de cabo HDMI, Caixa de Som..."
+                            className="w-full p-3 rounded-xl border border-slate-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-100 outline-none transition-all bg-white text-sm min-h-[80px] resize-y"
+                          />
+                        </div>
+
+                        {isAdmin && (
+                          <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 flex flex-col gap-3">
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="checkbox"
+                                id="isFixed"
+                                checked={formData.isFixed}
+                                onChange={e => setFormData({ ...formData, isFixed: e.target.checked })}
+                                className="w-5 h-5 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                              />
+                              <label htmlFor="isFixed" className="text-sm font-bold text-amber-800 cursor-pointer select-none">
+                                Agendamento Fixo (Semanal)
+                                <p className="text-xs text-amber-600 font-normal">
+                                  Replica este agendamento para todas as semanas disponíveis.
+                                </p>
+                              </label>
+                            </div>
+
+                            {/* End Date Input - Only visible if isFixed is checked */}
+                            {formData.isFixed && (
+                              <div className="pl-8 animate-in slide-in-from-top-2">
+                                <label className="text-xs font-bold text-amber-700 uppercase mb-1 block">
+                                  Data Final da Recorrência (Opcional)
+                                </label>
+                                <input
+                                  type="date"
+                                  value={formData.recurrenceEndDate}
+                                  min={formatDateLocal(new Date())}
+                                  onChange={e => setFormData({ ...formData, recurrenceEndDate: e.target.value })}
+                                  className="w-full p-2 rounded-lg border border-amber-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none transition-all bg-white text-sm text-slate-700"
+                                />
+                                <p className="text-[10px] text-amber-600/80 mt-1">
+                                  Se deixado em branco, a recorrência não terá data final definida (até o limite do calendário).
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
 
               </div>
@@ -1060,12 +1325,53 @@ export const ResourceSchedule: React.FC = () => {
                 {selectedSlot.existingBooking ? (
                   <>
                     {(isAdmin || selectedSlot.existingBooking.profissional_id === profile?.id) ? (
-                      <button
-                        onClick={handleDelete}
-                        className="px-4 py-2 rounded-xl bg-red-100 text-red-600 font-bold text-sm hover:bg-red-200 transition-colors flex items-center gap-2"
-                      >
-                        <Trash2 className="w-4 h-4" /> Excluir
-                      </button>
+                      (() => {
+                        // Check deletion rules (Time based)
+                        const bookingDate = new Date(selectedSlot.date);
+                        const now = new Date();
+
+                        // Parse slot start time (e.g. "07:00")
+                        const [hours, minutes] = selectedSlot.timeStart.split(':').map(Number);
+                        bookingDate.setHours(hours, minutes, 0, 0);
+
+                        // Calculate Deadline (2 hours before)
+                        const deadline = new Date(bookingDate);
+                        deadline.setHours(deadline.getHours() - 2);
+
+                        const isPast = bookingDate < new Date(now.setHours(0, 0, 0, 0)); // Strictly past day? No, logic said "Anteriores ao dia atual"
+                        // My SQL logic: if OLD.data < v_now::date. So if today is 10th, and booking is 9th. 
+                        // In JS:
+                        const todayDate = new Date();
+                        todayDate.setHours(0, 0, 0, 0);
+                        const bDateOnly = new Date(selectedSlot.date);
+                        bDateOnly.setHours(0, 0, 0, 0);
+
+                        const isPastDay = bDateOnly < todayDate;
+                        const isTooClose = new Date() > deadline;
+
+                        // Allow Admin to bypass? User didn't say. Assuming NO for consistency with SQL. 
+                        // Actually, Admins usually can do anything. But the SQL blocks everyone.
+                        // So UI should reflect SQL.
+
+                        const canDelete = !isPastDay && !isTooClose;
+
+                        if (!canDelete) {
+                          return (
+                            <div className="px-4 py-2 rounded-xl bg-slate-100 text-slate-400 font-bold text-sm flex items-center gap-2 cursor-not-allowed" title="Não é permitido excluir agendamentos passados ou com menos de 2h de antecedência.">
+                              <Trash2 className="w-4 h-4" /> Excluir
+                            </div>
+                          )
+                        }
+
+                        return (
+                          <button
+                            onClick={handleDelete}
+                            className="px-4 py-2 rounded-xl bg-red-100 text-red-600 font-bold text-sm hover:bg-red-200 transition-colors flex items-center gap-2"
+                          >
+                            <Trash2 className="w-4 h-4" /> Excluir
+                          </button>
+                        )
+                      })()
                     ) : (
                       <div /> /* Spacer */
                     )}
@@ -1084,15 +1390,65 @@ export const ResourceSchedule: React.FC = () => {
                     >
                       Cancelar
                     </button>
-                    <button
-                      onClick={handleSave}
-                      className={`flex-1 px-6 py-2 rounded-xl text-white font-bold text-sm transition-colors shadow-lg ${modalMode === 'pre-booking'
-                        ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
-                        : 'bg-primary-600 hover:bg-primary-700 shadow-primary-200'
-                        }`}
-                    >
-                      {modalMode === 'pre-booking' ? 'Registrar Interesse' : 'Confirmar Agendamento'}
-                    </button>
+                    {(() => {
+                      // Check if we should disable the button (Pre-booking window closed)
+                      const todayDay = new Date().getDay();
+                      const allowedDays = preBookingDays || [0, 1, 2, 3, 4, 6];
+                      const isWindowOpen = allowedDays.includes(todayDay);
+                      const isPreBookingMode = modalMode === 'pre-booking';
+                      // Admin can always bypass window
+                      const shouldDisable = isPreBookingMode && !isWindowOpen && !isAdmin;
+
+                      if (shouldDisable) {
+                        return (
+                          <div className="flex-1 px-4 py-2 text-center text-xs text-amber-600 font-bold bg-amber-50 rounded-xl border border-amber-100">
+                            Janela Fechada
+                          </div>
+                        )
+                      }
+
+                      // Check if Admin is blocked by existing queue
+                      // Admin can ONLY "Confirmar Agendamento" (Standard) if Queue is empty.
+                      // If Queue exists, Admin sees the queue list (handled above), and if they are in 'pre-booking' mode,
+                      // they shouldn't see "Registrar Interesse" basically? Or do we allow Admin to add interest too?
+                      // The prompt says: "Somente depois de apagar todas as pre-reservas existem sera possivel o cocordenador ou admin registrar"
+                      // This implies "Registrar" = "Confirmar Agendamento" (Booking).
+                      // So if Queue > 0, Admin cannot see the Booking Button.
+
+                      if (isAdmin && isPreBookingMode && slotRanking.length > 0) {
+                        return (
+                          <div className="flex-1 px-4 py-2 text-center text-xs text-red-600 font-bold bg-red-50 rounded-xl border border-red-100" title="Esvazie a fila para liberar o agendamento.">
+                            Esvazie a Fila!
+                          </div>
+                        )
+                      }
+
+                      // Check if user is already in queue
+                      const alreadyInQueue = isPreBookingMode && slotRanking.some(r => r.profissional_id === profile?.id);
+
+                      if (alreadyInQueue) {
+                        return (
+                          <button
+                            disabled
+                            className="flex-1 px-6 py-2 rounded-xl text-slate-400 font-bold text-sm bg-slate-100 cursor-not-allowed border border-slate-200"
+                          >
+                            Interesse Já Registrado
+                          </button>
+                        );
+                      }
+
+                      return (
+                        <button
+                          onClick={handleSave}
+                          className={`flex-1 px-6 py-2 rounded-xl text-white font-bold text-sm transition-colors shadow-lg ${modalMode === 'pre-booking'
+                            ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'
+                            : 'bg-primary-600 hover:bg-primary-700 shadow-primary-200'
+                            }`}
+                        >
+                          {modalMode === 'pre-booking' ? 'Registrar Interesse' : 'Confirmar Agendamento'}
+                        </button>
+                      )
+                    })()}
                   </>
                 )}
               </div>
@@ -1129,8 +1485,44 @@ export const ResourceSchedule: React.FC = () => {
                       'bg-primary-600 hover:bg-primary-700 text-white shadow-primary-200'
                     }`}
                 >
-                  Entendido, OK
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Fixed Booking Deletion Confirmation Modal */}
+        {showFixedDeleteConfirm && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+              <div className="p-8 flex flex-col items-center text-center">
+                <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-red-50 text-red-500">
+                  <Trash2 className="w-10 h-10" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-2 flex flex-col items-center gap-1">
+                  <span className="text-xs font-black text-amber-600 uppercase tracking-wider bg-amber-50 px-3 py-1 rounded-full border border-amber-100">
+                    Agendamento Fixo
+                  </span>
+                  Encerrar repetição?
+                </h3>
+                <p className="text-slate-500 text-sm leading-relaxed mb-8">
+                  Esta ação excluirá o agendamento desta data ({selectedSlot?.date.toLocaleDateString('pt-BR')}) e todas as repetições seguintes. O histórico anterior será mantido.
+                </p>
+
+                <div className="flex gap-3 w-full">
+                  <button
+                    onClick={() => setShowFixedDeleteConfirm(false)}
+                    className="flex-1 py-4 rounded-2xl font-bold text-sm bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={executeFixedBookingDeletion}
+                    className="flex-1 py-4 rounded-2xl font-bold text-sm bg-red-600 text-white hover:bg-red-700 shadow-xl shadow-red-200 transition-all active:scale-95"
+                  >
+                    Encerrar agendamentos
+                  </button>
+                </div>
               </div>
             </div>
           </div>

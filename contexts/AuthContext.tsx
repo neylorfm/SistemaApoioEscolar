@@ -49,7 +49,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else {
                 // Profile not found (deleted or not created yet)
                 // If this happens during login, we must block access.
-                console.warn('Profile not found for user:', userId);
+                console.warn('Profile not found for user (AuthContext):', userId);
+                console.error('FetchProfile Data was null.');
+
                 await supabase.auth.signOut();
                 setProfile(null);
                 setSession(null);
@@ -57,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 toast.error('Acesso negado: Perfil de usuário não encontrado ou desativado.');
             }
         } catch (err) {
-            console.error('Error fetching profile:', err);
+            console.error('Error fetching profile (AuthContext):', err);
         } finally {
             setLoading(false);
         }
