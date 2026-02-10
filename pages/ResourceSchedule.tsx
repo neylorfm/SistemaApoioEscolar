@@ -214,7 +214,7 @@ export const ResourceSchedule: React.FC = () => {
         profissional:Profissionais(nome, alias)
       `)
       .eq('recurso_id', selectedResourceId)
-      .eq('status', 'pending')
+      .in('status', ['pending', 'won_provisional', 'lost_provisional'])
       .gte('data', startDate)
       .lte('data', endDate);
 
@@ -325,10 +325,53 @@ export const ResourceSchedule: React.FC = () => {
       realFriday.setDate(realMonday.getDate() + 4);
       realFriday.setHours(0, 0, 0, 0);
 
-      if (today < realFriday) {
-        toast.info("Agendamentos para a próxima semana só abrem na Sexta-feira da semana atual.");
+      // Transition Week Logic (Next Week)
+      // Mon 00:00 - Fri 05:00: Open for Pre-Booking
+      // Fri 05:00 - Fri 12:00: Closed (Consolidation)
+      // Fri 12:00+: Open for Direct Booking
+
+      const realFriday5AM = new Date(realFriday);
+      realFriday5AM.setHours(5, 0, 0, 0);
+
+      const realFriday12PM = new Date(realFriday);
+      realFriday12PM.setHours(12, 0, 0, 0);
+
+      // 1. Before Friday 5AM -> Pre-Booking Allowed
+      if (today < realFriday5AM) {
+        // Check if Pre-Booking uses configured days? Usually yes, users want same rules. 
+        // Assuming Mon-Thu is allowed.
+        const todayDay = today.getDay();
+        // If "Pre-Booking Days" config applies here too? usually yes.
+        const allowedDays = preBookingDays || [0, 1, 2, 3, 4, 6];
+
+        if (!allowedDays.includes(todayDay)) {
+          toast.info("Pré-reservas para a próxima semana estão fechadas hoje.");
+          return;
+        }
+
+        openModal(date, slot, true); // Force Pre-Booking Mode
         return;
       }
+
+      // 2. Friday 5AM - 12PM -> Closed for New Pre-Bookings
+      // Exception: Users with existing pre-bookings can view/dismiss (Handled in step 3 or generally?)
+      // Actually, we should allow users to SEE their status.
+      // Let's rely on the "userHasPreBooking" check we added below? 
+      // But we returned early here. 
+      // Let's allow opening if user has booking.
+
+      const userHasPreBooking = preReservas.some(p => p.horario_id === slot.id && p.data === dateStr && p.profissional_id === profile?.id);
+
+      if (today >= realFriday5AM && today < realFriday12PM) {
+        if (userHasPreBooking) {
+          openModal(date, slot, true); // Allow viewing status
+          return;
+        }
+        toast.info("Período de consolidação (Sexta 05h-12h). Aguarde a liberação ao meio-dia.");
+        return;
+      }
+
+      // 3. Friday 12PM+ -> Direct Booking
       openModal(date, slot);
       return;
     }
@@ -338,10 +381,13 @@ export const ResourceSchedule: React.FC = () => {
       const allowedDays = preBookingDays || [0, 1, 2, 3, 4, 6];
       const isWindowOpen = allowedDays.includes(todayDay);
 
-      if (!isWindowOpen && !isAdmin) {
+      // Allow access if user ALREADY has a pre-booking (to check status/dismiss)
+      const userHasPreBooking = preReservas.some(p => p.horario_id === slot.id && p.data === dateStr && p.profissional_id === profile?.id);
+
+      if (!isWindowOpen && !isAdmin && !userHasPreBooking) {
         const daysMap = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
         const allowedNames = allowedDays.map(d => daysMap[d]).join(', ');
-        toast.info(`Janelas de Pré-Reserva abrem apenas: ${allowedNames}.`);
+        toast.info(`Janelas de Pré-Reserva (Novos) abrem apenas: ${allowedNames}.`);
         return;
       }
       openModal(date, slot, true);
@@ -695,6 +741,47 @@ export const ResourceSchedule: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       toast.error('Erro ao remover: ' + err.message);
+    }
+  };
+
+  const handleConfirmProvisional = async () => {
+    if (!selectedSlot || !selectedResourceId) return;
+
+    const userPreReserva = preReservas.find(p =>
+      p.recurso_id === selectedResourceId &&
+      p.horario_id === selectedSlot.timeSlotId &&
+      p.data === formatDateLocal(selectedSlot.date) &&
+      p.profissional_id === profile?.id &&
+      p.status === 'won_provisional'
+    );
+
+    if (!userPreReserva) return;
+
+    try {
+      // 1. Insert into Agendamentos
+      const { error: insertError } = await supabase.from('Agendamentos').insert({
+        recurso_id: selectedResourceId,
+        horario_id: selectedSlot.timeSlotId,
+        data: formatDateLocal(selectedSlot.date),
+        profissional_id: profile?.id,
+        turma_id: userPreReserva.turma_id,
+        disciplina_id: userPreReserva.disciplina_id,
+        descricao: 'Confirmado pelo usuário (Prioridade)',
+        created_at: new Date().toISOString()
+      });
+
+      if (insertError) throw insertError;
+
+      // 2. Update PreReserva to confirmed
+      await supabase.from('PreReservas').update({ status: 'confirmed' }).eq('id', userPreReserva.id);
+
+      toast.success('Agendamento confirmado com sucesso!');
+      setIsModalOpen(false);
+      fetchBookings();
+      fetchPreReservas();
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Erro ao confirmar: ' + err.message);
     }
   };
 
@@ -1131,6 +1218,41 @@ export const ResourceSchedule: React.FC = () => {
                       <p className="text-[10px] text-slate-400 leading-tight">
                         Cálculo do Ranking: Soma dos Agendamentos {useCancellationPenalty ? 'e Cancelamentos' : ''} dos últimos 21 dias + Ordem de Solicitação. Quanto menor a pontuação, maior a prioridade.
                       </p>
+
+                      {/* PROVISIONAL WINNER BANNER */}
+                      {(() => {
+                        const myStatus = preReservas.find(p => p.horario_id === selectedSlot.timeSlotId && p.data === formatDateLocal(selectedSlot.date) && p.profissional_id === profile?.id)?.status;
+
+                        if (myStatus === 'won_provisional') {
+                          return (
+                            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl flex flex-col items-center text-center animate-in zoom-in-95">
+                              <div className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-2">
+                                <Check className="w-6 h-6" />
+                              </div>
+                              <h4 className="text-sm font-bold text-green-800">Você obteve prioridade!</h4>
+                              <p className="text-xs text-green-700 mt-1 mb-2">
+                                Seu baixo uso recente garantiu este horário.
+                              </p>
+                              <p className="text-[10px] text-green-600/80 italic">
+                                Confirme abaixo ou dispense para dar chance ao próximo.
+                                <br />
+                                Autoconfirmação ao meio-dia.
+                              </p>
+                            </div>
+                          );
+                        }
+                        if (myStatus === 'lost_provisional') {
+                          return (
+                            <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center text-center">
+                              <h4 className="text-sm font-bold text-slate-600">Na Fila de Espera</h4>
+                              <p className="text-xs text-slate-500 mt-1">
+                                Aguardando desistência do titular. Você será notificado se a vaga liberar.
+                              </p>
+                            </div>
+                          )
+                        }
+                        return null;
+                      })()}
                     </div>
 
                     {/* Show Form ONLY if Queue is Empty OR user is not Admin (Professors can join queue) */}
@@ -1424,7 +1546,40 @@ export const ResourceSchedule: React.FC = () => {
                       }
 
                       // Check if user is already in queue
-                      const alreadyInQueue = isPreBookingMode && slotRanking.some(r => r.profissional_id === profile?.id);
+                      const myPreReserva = isPreBookingMode && preReservas.find(r => r.profissional_id === profile?.id && r.horario_id === selectedSlot.timeSlotId && r.data === formatDateLocal(selectedSlot.date));
+                      const alreadyInQueue = !!myPreReserva;
+
+                      // --- PROVISIONAL WINNER ACTION ---
+                      if (myPreReserva?.status === 'won_provisional') {
+                        return (
+                          <div className="flex gap-2 w-full">
+                            <button
+                              onClick={() => handleRemovePreBooking(profile?.id || '')} // Dismiss (Delete)
+                              className="flex-1 px-4 py-2 rounded-xl text-slate-500 font-bold text-sm hover:bg-slate-100 transition-colors border border-slate-200"
+                            >
+                              Dispensar Agora
+                            </button>
+                            <button
+                              onClick={handleConfirmProvisional}
+                              className="flex-1 px-4 py-2 rounded-xl bg-green-600 text-white font-bold text-sm hover:bg-green-700 transition-colors shadow-lg shadow-green-200"
+                            >
+                              Confirmar Uso
+                            </button>
+                          </div>
+                        )
+                      }
+
+                      // --- LOST PROVISIONAL (Just Leave Button) ---
+                      if (myPreReserva?.status === 'lost_provisional') {
+                        return (
+                          <button
+                            onClick={() => handleRemovePreBooking(profile?.id || '')}
+                            className="flex-1 px-6 py-2 rounded-xl text-red-500 font-bold text-sm bg-red-50 hover:bg-red-100 border border-red-100 transition-colors"
+                          >
+                            Sair da Fila
+                          </button>
+                        )
+                      }
 
                       if (alreadyInQueue) {
                         return (
